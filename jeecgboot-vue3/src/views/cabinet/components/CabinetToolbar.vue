@@ -16,10 +16,6 @@
           </a-button>
         </a-upload>
       </div>
-      <a-button v-if="canManage" @click="emit('open-upload-progress')">
-        <Icon icon="ant-design:cloud-sync-outlined" />
-        上传状态
-      </a-button>
       <a-button v-if="canManage" danger :disabled="selectedCount === 0" @click="emit('delete')">删除</a-button>
       <a-button @click="emit('refresh')">刷新</a-button>
       <a-input-search
@@ -89,12 +85,37 @@
       </a-dropdown>
     </a-space>
     <a-space>
-      <a-radio-group v-if="viewMode === 'grid'" :value="gridIconSize" size="small" @update:value="emit('update:gridIconSize', $event)">
-        <a-radio-button value="large">大图标</a-radio-button>
-        <a-radio-button value="small">小图标</a-radio-button>
-      </a-radio-group>
-      <a-button :type="viewMode === 'grid' ? 'primary' : 'default'" @click="emit('change-view-mode', 'grid')">图标视图</a-button>
-      <a-button :type="viewMode === 'table' ? 'primary' : 'default'" @click="emit('change-view-mode', 'table')">列表视图</a-button>
+      <a-tooltip v-if="canManage" placement="bottom" title="上传进度">
+        <a-button @click="emit('open-upload-progress')">
+          <CloudSyncOutlined />
+        </a-button>
+      </a-tooltip>
+      <a-tooltip :open="gridViewTooltipOpen" placement="bottom" title="图标视图">
+      <span @mouseenter="gridViewTooltipOpen = true" @mouseleave="gridViewTooltipOpen = false">
+      <a-dropdown :trigger="['click']" placement="bottomRight" overlay-class-name="view-mode-dropdown-overlay">
+        <a-button :type="viewMode === 'grid' ? 'primary' : 'default'" @click="handleGridViewClick">
+          <AppstoreOutlined />
+        </a-button>
+        <template #overlay>
+          <a-menu>
+            <a-menu-item @click="emit('update:gridIconSize', 'large')">
+              <span class="sort-dot" :class="{ active: gridIconSize === 'large' }"></span>
+              大图标
+            </a-menu-item>
+            <a-menu-item @click="emit('update:gridIconSize', 'small')">
+              <span class="sort-dot" :class="{ active: gridIconSize === 'small' }"></span>
+              小图标
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
+      </span>
+      </a-tooltip>
+      <a-tooltip placement="bottom" title="列表视图">
+      <a-button :type="viewMode === 'table' ? 'primary' : 'default'" @click="emit('change-view-mode', 'table')">
+        <BarsOutlined />
+      </a-button>
+      </a-tooltip>
     </a-space>
   </div>
 </template>
@@ -102,6 +123,7 @@
 <script lang="ts" setup>
   import { ref } from 'vue';
   import type { PropType } from 'vue';
+  import { AppstoreOutlined, BarsOutlined, CloudSyncOutlined } from '@ant-design/icons-vue';
   import { Dropdown } from '/@/components/Dropdown';
   import type { DropMenu } from '/@/components/Dropdown';
   import { Icon } from '/@/components/Icon';
@@ -128,6 +150,7 @@
   });
 
   const uploadWrapRef = ref<HTMLElement | null>(null);
+  const gridViewTooltipOpen = ref(false);
 
   const createMenuList: DropMenu[] = [
     { event: 'file', text: '新建文件', icon: 'ant-design:file-add-outlined' },
@@ -137,6 +160,11 @@
   function handleCreateMenuEvent(menu?: DropMenu) {
     const type = menu?.event === 'file' ? 'file' : 'folder';
     emit('create-item', type);
+  }
+
+  function handleGridViewClick() {
+    gridViewTooltipOpen.value = false;
+    emit('change-view-mode', 'grid');
   }
 
   /** 供右键菜单「上传」等场景触发与工具栏相同的文件选择框 */
@@ -241,6 +269,29 @@
 
     .ant-dropdown-menu-item-divider {
       margin: 6px 0;
+    }
+  }
+
+  :deep(.view-mode-dropdown-overlay) {
+    .ant-dropdown-menu {
+      min-width: 120px;
+      padding: 8px 0;
+      border: 1px solid #d9dee7;
+      border-radius: 12px;
+      box-shadow: 0 10px 28px rgb(20 39 85 / 18%);
+    }
+
+    .ant-dropdown-menu-item {
+      display: flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 8px 16px;
+      color: #1f2d3d;
+      font-size: 14px;
+    }
+
+    .ant-dropdown-menu-item:hover {
+      background: #f4f6f8;
     }
   }
 
