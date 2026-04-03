@@ -15,6 +15,8 @@ export interface CabinetItem {
   id: string;
   name: string;
   type: ItemType;
+  iconKey?: string;
+  customIcon?: string;
   size: string;
   createTime: string;
   updateTime: string;

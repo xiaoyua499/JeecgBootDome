@@ -30,15 +30,14 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, nextTick, ref, watch } from 'vue';
-  import { resolveCabinetIconSrc } from '../utils';
+  import { nextTick, ref, watch } from 'vue';
 
   const inputRef = ref();
 
   // 单个文件项：负责图标模式下的展示、选中态和就地重命名输入框。
-  const props = defineProps<{
+  defineProps<{
     name: string;
-    iconType: string;
+    iconSrc: string;
     size: 'large' | 'small';
     selected: boolean;
     cutting?: boolean;
@@ -46,8 +45,6 @@
     editing?: boolean;
     editValue?: string;
   }>();
-
-  const iconSrc = computed(() => resolveCabinetIconSrc(props.iconType, props.size));
 
   const emit = defineEmits<{
     (e: 'click', event: MouseEvent): void;

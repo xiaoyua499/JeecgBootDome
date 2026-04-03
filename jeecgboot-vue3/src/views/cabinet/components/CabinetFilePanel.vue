@@ -29,7 +29,7 @@
           :data-group-key="group.key" @start="resetSameGroupSortArm()"
           @end="resetSameGroupSortArm()" @update:modelValue="emit('grid-order-change', group, $event)">
           <template #item="{ element }">
-            <FileItem :data-file-id="element.id" :name="element.name" :icon-type="resolveIconType(element)"
+            <FileItem :data-file-id="element.id" :name="element.name" :icon-src="resolveCabinetItemIconSrc(element, gridIconSize)"
               :size="gridIconSize" :selected="selectedIdSet.has(element.id)"
               :cutting="clipboardCutIdSet.has(element.id)" :drop-target="false"
               :editing="isRenaming(element.id)" :edit-value="renamingValue"
@@ -63,7 +63,7 @@
           @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
           @contextmenu.prevent="emit('item-contextmenu', item, $event)">
           <div class="grouped-cell col-name">
-            <img class="table-icon" :src="resolveCabinetIconSrc(resolveIconType(item))" :alt="item.name" style="margin-right: 10px;" draggable="false" />
+            <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name" style="margin-right: 10px;" draggable="false" />
             <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
               @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
               @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
@@ -97,7 +97,7 @@
             @contextmenu.prevent="emit('item-contextmenu', item, $event)"
         >
             <div class="grouped-cell col-name">
-              <img class="table-icon" :src="resolveCabinetIconSrc(resolveIconType(item))" :alt="item.name" style="margin-right: 10px;" draggable="false" />
+              <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name" style="margin-right: 10px;" draggable="false" />
               <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
                 @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
                 @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
@@ -119,6 +119,7 @@
       <li @click="emit('copy')">复制</li>
       <li v-if="canManage" @click="emit('cut')">剪切</li>
       <li v-if="canPasteToItemTarget" @click="emit('paste-to-item')">粘贴</li>
+      <li v-if="canCustomizeIcons" @click="emit('customize-icon')">自定义图标</li>
       <li v-if="canManage" @click="emit('rename')">重命名</li>
       <li v-if="canManage" @click="emit('delete')">删除</li>
       <li @click="emit('view-property')">属性</li>
@@ -198,7 +199,7 @@ import Draggable from 'vuedraggable';
 import { ref } from 'vue';
 import type { PropType } from 'vue';
 import type { BreadcrumbItem, CabinetItem, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
-import { resolveCabinetIconSrc, resolveIconType, resolveTypeLabel } from '../utils';
+import { resolveCabinetItemIconSrc, resolveTypeLabel } from '../utils';
 import FileItem from './FileItem.vue';
 
 // 右侧文件区：负责面包屑、图标/列表展示、右键菜单和属性弹窗。
@@ -231,6 +232,7 @@ const props = defineProps({
   contextMenu: { type: Object as PropType<ContextMenuState>, required: true },
   canPasteToCurrentFolder: { type: Boolean, required: true },
   canPasteToItemTarget: { type: Boolean, required: true },
+  canCustomizeIcons: { type: Boolean, required: true },
   viewMode: { type: String as PropType<ViewMode>, required: true },
   gridIconSize: { type: String as PropType<GridIconSize>, required: true },
   sortField: { type: String as PropType<SortField>, required: true },
@@ -263,6 +265,7 @@ const emit = defineEmits<{
   (e: 'cut'): void;
   (e: 'paste'): void;
   (e: 'paste-to-item'): void;
+  (e: 'customize-icon'): void;
   (e: 'rename'): void;
   (e: 'delete'): void;
   (e: 'view-property'): void;

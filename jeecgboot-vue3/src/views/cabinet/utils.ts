@@ -2,20 +2,52 @@ import type { DataNode } from 'ant-design-vue/es/tree';
 import type { BreadcrumbItem, CabinetItem, GroupField, GroupSection, SortField, SortOrder } from './types';
 import iconDoc50 from '/@/assets/images/icon/icons8-doc-50.png';
 import iconDoc100 from '/@/assets/images/icon/icons8-doc-100.png';
+import iconDwg50 from '/@/assets/images/icon/icons8-.dwg-50.png';
+import iconDwg100 from '/@/assets/images/icon/icons8-.dwg-100.png';
+import icon7Zip50 from '/@/assets/images/icon/icons8-7zip-50.png';
+import icon7Zip100 from '/@/assets/images/icon/icons8-7zip-100.png';
+import iconCss50 from '/@/assets/images/icon/icons8-css文件类型-50.png';
+import iconCss100 from '/@/assets/images/icon/icons8-css文件类型-100.png';
 import iconExcel50 from '/@/assets/images/icon/icons8-xls-50.png';
 import iconExcel100 from '/@/assets/images/icon/icons8-xls-100.png';
 import iconFile50 from '/@/assets/images/icon/icons8-文件-50.png';
 import iconFile100 from '/@/assets/images/icon/icons8-文件-100.png';
 import iconFolder50 from '/@/assets/images/icon/icons8-文件夹-50.png';
 import iconFolder100 from '/@/assets/images/icon/icons8-文件夹-100.png';
+import iconHtml50 from '/@/assets/images/icon/icons8-html文件类型-50.png';
+import iconHtml100 from '/@/assets/images/icon/icons8-html文件类型-100.png';
 import iconImage50 from '/@/assets/images/icon/icons8-图像文件-50.png';
 import iconImage100 from '/@/assets/images/icon/icons8-图像文件-100.png';
+import iconJava50 from '/@/assets/images/icon/icons8-java-文件-50.png';
+import iconJava100 from '/@/assets/images/icon/icons8-java-文件-100.png';
+import iconJpg50 from '/@/assets/images/icon/icons8-jpg-50.png';
+import iconJpg100 from '/@/assets/images/icon/icons8-jpg-100.png';
+import iconJson50 from '/@/assets/images/icon/icons8-json-50.png';
+import iconJson100 from '/@/assets/images/icon/icons8-json-100.png';
+import iconMenu50 from '/@/assets/images/icon/icons8-菜单-50.png';
+import iconMenu100 from '/@/assets/images/icon/icons8-菜单-100.png';
+import iconMp350 from '/@/assets/images/icon/icons8-mp3-50.png';
+import iconMp3100 from '/@/assets/images/icon/icons8-mp3-100.png';
 import iconPdf50 from '/@/assets/images/icon/icons8-pdf-50.png';
 import iconPdf100 from '/@/assets/images/icon/icons8-pdf-100.png';
+import iconPng50 from '/@/assets/images/icon/icons8-png-50.png';
+import iconPng100 from '/@/assets/images/icon/icons8-png-100.png';
+import iconPpt50 from '/@/assets/images/icon/icons8-ppt-50.png';
+import iconPpt100 from '/@/assets/images/icon/icons8-ppt-100.png';
+import iconRar50 from '/@/assets/images/icon/icons8-rar-50.png';
+import iconRar100 from '/@/assets/images/icon/icons8-rar-100.png';
+import iconTar50 from '/@/assets/images/icon/icons8-tar-50.png';
+import iconTar100 from '/@/assets/images/icon/icons8-tar-100.png';
 import iconText50 from '/@/assets/images/icon/icons8-文本-50.png';
 import iconText100 from '/@/assets/images/icon/icons8-文本-100.png';
+import iconThumb50 from '/@/assets/images/icon/icons8-缩略图-50.png';
+import iconThumb100 from '/@/assets/images/icon/icons8-缩略图-100.png';
 import iconVideo50 from '/@/assets/images/icon/icons8-视频文件-50.png';
 import iconVideo100 from '/@/assets/images/icon/icons8-视频文件-100.png';
+import iconWord50 from '/@/assets/images/icon/icons8-microsoft-word-2019-50.png';
+import iconWord100 from '/@/assets/images/icon/icons8-microsoft-word-2019-100.png';
+import iconExcel201950 from '/@/assets/images/icon/icons8-microsoft-excel-2019-50.png';
+import iconExcel2019100 from '/@/assets/images/icon/icons8-microsoft-excel-2019-100.png';
 import iconZip50 from '/@/assets/images/icon/icons8-压缩-50.png';
 import iconZip100 from '/@/assets/images/icon/icons8-压缩-100.png';
 
@@ -192,12 +224,69 @@ const CABINET_ICON_ASSET_MAP = {
   xls: { large: iconExcel100, small: iconExcel50 },
   text: { large: iconText100, small: iconText50 },
   file: { large: iconFile100, small: iconFile50 },
+  dwg: { large: iconDwg100, small: iconDwg50 },
+  sevenZip: { large: icon7Zip100, small: icon7Zip50 },
+  css: { large: iconCss100, small: iconCss50 },
+  html: { large: iconHtml100, small: iconHtml50 },
+  java: { large: iconJava100, small: iconJava50 },
+  jpg: { large: iconJpg100, small: iconJpg50 },
+  json: { large: iconJson100, small: iconJson50 },
+  menu: { large: iconMenu100, small: iconMenu50 },
+  mp3: { large: iconMp3100, small: iconMp350 },
+  png: { large: iconPng100, small: iconPng50 },
+  ppt: { large: iconPpt100, small: iconPpt50 },
+  rar: { large: iconRar100, small: iconRar50 },
+  tar: { large: iconTar100, small: iconTar50 },
+  thumbnail: { large: iconThumb100, small: iconThumb50 },
+  word: { large: iconWord100, small: iconWord50 },
+  excel2019: { large: iconExcel2019100, small: iconExcel201950 },
 } as const;
+
+export type CabinetBuiltInIconKey = keyof typeof CABINET_ICON_ASSET_MAP;
+
+export const CABINET_BUILTIN_ICON_OPTIONS: Array<{ key: CabinetBuiltInIconKey; label: string }> = [
+  { key: 'folder', label: '文件夹' },
+  { key: 'file', label: '通用文件' },
+  { key: 'text', label: '文本' },
+  { key: 'doc', label: 'DOC' },
+  { key: 'word', label: 'Word 2019' },
+  { key: 'xls', label: 'XLS' },
+  { key: 'excel2019', label: 'Excel 2019' },
+  { key: 'pdf', label: 'PDF' },
+  { key: 'image', label: '图片文件' },
+  { key: 'jpg', label: 'JPG' },
+  { key: 'png', label: 'PNG' },
+  { key: 'video', label: '视频文件' },
+  { key: 'mp3', label: 'MP3' },
+  { key: 'zip', label: '压缩包' },
+  { key: 'rar', label: 'RAR' },
+  { key: 'sevenZip', label: '7ZIP' },
+  { key: 'tar', label: 'TAR' },
+  { key: 'ppt', label: 'PPT' },
+  { key: 'json', label: 'JSON' },
+  { key: 'html', label: 'HTML' },
+  { key: 'css', label: 'CSS' },
+  { key: 'java', label: 'JAVA' },
+  { key: 'dwg', label: 'DWG' },
+  { key: 'thumbnail', label: '缩略图' },
+  { key: 'menu', label: '菜单' },
+] as const;
 
 // 图标资源统一从这里映射，组件层只关心业务类型，不直接依赖具体文件名。
 export function resolveCabinetIconSrc(iconType: string, size: 'large' | 'small' = 'small') {
   const normalizedType = iconType in CABINET_ICON_ASSET_MAP ? (iconType as keyof typeof CABINET_ICON_ASSET_MAP) : 'file';
   return CABINET_ICON_ASSET_MAP[normalizedType][size];
+}
+
+// 用户自定义图标优先级最高，未设置时再回退到系统默认图标映射。
+export function resolveCabinetItemIconSrc(item: CabinetItem, size: 'large' | 'small' = 'small') {
+  if (item.customIcon) {
+    return item.customIcon;
+  }
+  if (item.iconKey) {
+    return resolveCabinetIconSrc(item.iconKey, size);
+  }
+  return resolveCabinetIconSrc(resolveIconType(item), size);
 }
 
 export function resolveTypeLabel(item: CabinetItem) {

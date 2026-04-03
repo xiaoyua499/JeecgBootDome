@@ -19,6 +19,7 @@
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
         :selection-box="selectionBox" :context-menu="contextMenu"
         :can-paste-to-current-folder="canPasteToCurrentFolder" :can-paste-to-item-target="canPasteToItemTarget"
+        :can-customize-icons="canCustomizeIcons"
         :view-mode="viewMode" :grid-icon-size="gridIconSize" :sort-field="sortField" :sort-order="sortOrder"
         :group-field="groupField" :renaming-value="renamingValue" :property-modal-visible="propertyModalVisible"
         :property-item="propertyItem" :is-renaming="isRenaming" :build-table-row-event="buildTableRowEvent"
@@ -29,7 +30,7 @@
         @item-click="handleItemClick" @open="handleOpen" @item-contextmenu="handleItemContextMenu"
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
         @open-menu-action="handleOpenMenuAction" @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
-        @paste-to-item="handlePasteToItem" @rename="handleRename" @delete="handleDelete"
+        @paste-to-item="handlePasteToItem" @customize-icon="handleCustomizeIcon" @rename="handleRename" @delete="handleDelete"
         @view-property="handleViewProperty" @create-item="handleCreateItem" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
         @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
@@ -38,6 +39,7 @@
 
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
     <CabinetCreateItemModal @register="registerCreateItemModal" @success="handleCreateItemSuccess" />
+    <CabinetCustomizeIconModal @register="registerCustomizeIconModal" @success="handleCustomizeIconSuccess" />
   </div>
 </template>
 
@@ -54,6 +56,7 @@ import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
 import type { CabinetItem, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
 import { buildIndexedSiblingName, formatNow, generateItemId, resolveCabinetFileExt } from '../utils';
 import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
+import CabinetCustomizeIconModal from './CabinetCustomizeIconModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
 import CabinetToolbar from './CabinetToolbar.vue';
 import CabinetTreePanel from './CabinetTreePanel.vue';
@@ -89,6 +92,7 @@ const renamingItemId = ref('');
 const renamingValue = ref('');
 const clipboardState = ref<ClipboardState | null>(null);
 const canManageRef = computed(() => props.canManage);
+const canCustomizeIcons = computed(() => props.cabinetName === '私柜');
 const contextMenuTargetId = computed(() => contextMenu.value.targetId);
 
 const contextMenu = ref({
@@ -208,6 +212,7 @@ const { ingestDataTransfer, ingestPlainFiles } = useCabinetUpload({
 
 const { enqueueFiles, disposeAllTimers } = useCabinetUploadTasks();
 const [registerCreateItemModal, { openModal: openCreateItemModal }] = useModal();
+const [registerCustomizeIconModal, { openModal: openCustomizeIconModal }] = useModal();
 
 const CABINET_UPLOAD_NO_AUTO_POPUP_KEY = 'cabinet-upload-no-auto-popup';
 
@@ -414,6 +419,34 @@ const handleViewProperty = () => {
   hideContextMenu();
 };
 
+const handleCustomizeIcon = () => {
+  if (!canCustomizeIcons.value) {
+    hideContextMenu();
+    return;
+  }
+  const targetId = contextMenu.value.targetId || selectedItemIds.value[0];
+  if (!targetId) {
+    hideContextMenu();
+    return;
+  }
+  const target = getItemById(targetId);
+  hideContextMenu();
+  if (target) {
+    openCustomizeIconModal(true, { item: { ...target } });
+  }
+};
+
+const handleCustomizeIconSuccess = ({ itemId, iconKey, customIcon }: { itemId: string; iconKey?: string; customIcon?: string }) => {
+  const target = getItemById(itemId);
+  if (!target) {
+    return;
+  }
+  // 自定义上传和内置图标互斥保存，避免出现双重覆盖来源。
+  target.iconKey = iconKey;
+  target.customIcon = customIcon;
+  message.success('图标已更新');
+};
+
 const handleUpload = () => {
   if (!props.canManage) {
     message.warning('当前页面无上传权限');
@@ -497,7 +530,7 @@ const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '')
   }
   const rect = filePanelRef.value.getBoundingClientRect();
   const menuWidth = mode === 'blank' ? 186 : 140;
-  const menuHeight = mode === 'blank' ? 262 : 140;
+  const menuHeight = mode === 'blank' ? 262 : canCustomizeIcons.value ? 176 : 140;
   let left = event.clientX - rect.left + filePanelRef.value.scrollLeft;
   let top = event.clientY - rect.top + filePanelRef.value.scrollTop;
   const maxLeft = filePanelRef.value.clientWidth - menuWidth - 8;
