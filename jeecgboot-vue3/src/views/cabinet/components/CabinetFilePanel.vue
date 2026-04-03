@@ -63,7 +63,7 @@
           @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
           @contextmenu.prevent="emit('item-contextmenu', item, $event)">
           <div class="grouped-cell col-name">
-            <span class="table-icon" :class="`icon-${resolveIconType(item)}`" style="margin-right: 10px;"></span>
+            <img class="table-icon" :src="resolveCabinetIconSrc(resolveIconType(item))" :alt="item.name" style="margin-right: 10px;" draggable="false" />
             <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
               @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
               @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
@@ -97,7 +97,7 @@
             @contextmenu.prevent="emit('item-contextmenu', item, $event)"
         >
             <div class="grouped-cell col-name">
-              <span class="table-icon" :class="`icon-${resolveIconType(item)}`" style="margin-right: 10px;"></span>
+              <img class="table-icon" :src="resolveCabinetIconSrc(resolveIconType(item))" :alt="item.name" style="margin-right: 10px;" draggable="false" />
               <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
                 @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
                 @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
@@ -198,7 +198,7 @@ import Draggable from 'vuedraggable';
 import { ref } from 'vue';
 import type { PropType } from 'vue';
 import type { BreadcrumbItem, CabinetItem, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
-import { resolveIconType, resolveTypeLabel } from '../utils';
+import { resolveCabinetIconSrc, resolveIconType, resolveTypeLabel } from '../utils';
 import FileItem from './FileItem.vue';
 
 // 右侧文件区：负责面包屑、图标/列表展示、右键菜单和属性弹窗。
@@ -631,84 +631,13 @@ const handleGridDragMove = (evt: DraggableMoveEvent) => {
 }
 
 .table-icon {
-  position: relative;
-  display: inline-flex;
+  display: inline-block;
   width: 20px;
   height: 20px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-
-  &::before {
-    content: 'F';
-  }
-}
-
-.icon-folder {
-  background: #f7b731;
-
-  &::before {
-    content: 'DIR';
-  }
-}
-
-.icon-image {
-  background: #2f9e44;
-
-  &::before {
-    content: 'IMG';
-  }
-}
-
-.icon-video {
-  background: #e8590c;
-
-  &::before {
-    content: 'MOV';
-  }
-}
-
-.icon-pdf {
-  background: #c92a2a;
-
-  &::before {
-    content: 'PDF';
-  }
-}
-
-.icon-zip {
-  background: #5f3dc4;
-
-  &::before {
-    content: 'ZIP';
-  }
-}
-
-.icon-doc {
-  background: #1c7ed6;
-
-  &::before {
-    content: 'DOC';
-  }
-}
-
-.icon-xls {
-  background: #2b8a3e;
-
-  &::before {
-    content: 'XLS';
-  }
-}
-
-.icon-file {
-  background: #868e96;
-
-  &::before {
-    content: 'FILE';
-  }
+  object-fit: contain;
+  flex-shrink: 0;
+  user-select: none;
+  pointer-events: none;
 }
 
 .context-menu {

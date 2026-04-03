@@ -1,5 +1,23 @@
 import type { DataNode } from 'ant-design-vue/es/tree';
 import type { BreadcrumbItem, CabinetItem, GroupField, GroupSection, SortField, SortOrder } from './types';
+import iconDoc50 from '/@/assets/images/icon/icons8-doc-50.png';
+import iconDoc100 from '/@/assets/images/icon/icons8-doc-100.png';
+import iconExcel50 from '/@/assets/images/icon/icons8-xls-50.png';
+import iconExcel100 from '/@/assets/images/icon/icons8-xls-100.png';
+import iconFile50 from '/@/assets/images/icon/icons8-文件-50.png';
+import iconFile100 from '/@/assets/images/icon/icons8-文件-100.png';
+import iconFolder50 from '/@/assets/images/icon/icons8-文件夹-50.png';
+import iconFolder100 from '/@/assets/images/icon/icons8-文件夹-100.png';
+import iconImage50 from '/@/assets/images/icon/icons8-图像文件-50.png';
+import iconImage100 from '/@/assets/images/icon/icons8-图像文件-100.png';
+import iconPdf50 from '/@/assets/images/icon/icons8-pdf-50.png';
+import iconPdf100 from '/@/assets/images/icon/icons8-pdf-100.png';
+import iconText50 from '/@/assets/images/icon/icons8-文本-50.png';
+import iconText100 from '/@/assets/images/icon/icons8-文本-100.png';
+import iconVideo50 from '/@/assets/images/icon/icons8-视频文件-50.png';
+import iconVideo100 from '/@/assets/images/icon/icons8-视频文件-100.png';
+import iconZip50 from '/@/assets/images/icon/icons8-压缩-50.png';
+import iconZip100 from '/@/assets/images/icon/icons8-压缩-100.png';
 
 export function parseSizeToBytes(sizeText: string) {
   if (!sizeText || sizeText === '-') {
@@ -160,7 +178,26 @@ export function resolveIconType(item: CabinetItem) {
   if (['zip', 'rar', '7z'].includes(item.ext)) return 'zip';
   if (['doc', 'docx'].includes(item.ext)) return 'doc';
   if (['xls', 'xlsx'].includes(item.ext)) return 'xls';
+  if (item.ext === 'txt') return 'text';
   return 'file';
+}
+
+const CABINET_ICON_ASSET_MAP = {
+  folder: { large: iconFolder100, small: iconFolder50 },
+  image: { large: iconImage100, small: iconImage50 },
+  video: { large: iconVideo100, small: iconVideo50 },
+  pdf: { large: iconPdf100, small: iconPdf50 },
+  zip: { large: iconZip100, small: iconZip50 },
+  doc: { large: iconDoc100, small: iconDoc50 },
+  xls: { large: iconExcel100, small: iconExcel50 },
+  text: { large: iconText100, small: iconText50 },
+  file: { large: iconFile100, small: iconFile50 },
+} as const;
+
+// 图标资源统一从这里映射，组件层只关心业务类型，不直接依赖具体文件名。
+export function resolveCabinetIconSrc(iconType: string, size: 'large' | 'small' = 'small') {
+  const normalizedType = iconType in CABINET_ICON_ASSET_MAP ? (iconType as keyof typeof CABINET_ICON_ASSET_MAP) : 'file';
+  return CABINET_ICON_ASSET_MAP[normalizedType][size];
 }
 
 export function resolveTypeLabel(item: CabinetItem) {

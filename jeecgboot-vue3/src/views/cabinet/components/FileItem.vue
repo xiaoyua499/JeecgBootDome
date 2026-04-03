@@ -11,7 +11,7 @@
     @dragleave="emit('dragleave', $event)"
     @drop.prevent="emit('drop', $event)"
   >
-    <div class="file-icon" :class="`icon-${iconType}`"></div>
+    <img class="file-icon" :src="iconSrc" :alt="name" draggable="false" />
     <template v-if="editing">
       <a-input
         ref="inputRef"
@@ -30,12 +30,13 @@
 </template>
 
 <script lang="ts" setup>
-  import { nextTick, ref, watch } from 'vue';
+  import { computed, nextTick, ref, watch } from 'vue';
+  import { resolveCabinetIconSrc } from '../utils';
 
   const inputRef = ref();
 
   // 单个文件项：负责图标模式下的展示、选中态和就地重命名输入框。
-  defineProps<{
+  const props = defineProps<{
     name: string;
     iconType: string;
     size: 'large' | 'small';
@@ -45,6 +46,8 @@
     editing?: boolean;
     editValue?: string;
   }>();
+
+  const iconSrc = computed(() => resolveCabinetIconSrc(props.iconType, props.size));
 
   const emit = defineEmits<{
     (e: 'click', event: MouseEvent): void;
@@ -167,80 +170,8 @@
   }
 
   .file-icon {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: 600;
-
-    &::before {
-      content: 'F';
-    }
-  }
-
-  .icon-folder {
-    background: #f7b731;
-
-    &::before {
-      content: 'DIR';
-    }
-  }
-
-  .icon-image {
-    background: #2f9e44;
-
-    &::before {
-      content: 'IMG';
-    }
-  }
-
-  .icon-video {
-    background: #e8590c;
-
-    &::before {
-      content: 'MOV';
-    }
-  }
-
-  .icon-pdf {
-    background: #c92a2a;
-
-    &::before {
-      content: 'PDF';
-    }
-  }
-
-  .icon-zip {
-    background: #5f3dc4;
-
-    &::before {
-      content: 'ZIP';
-    }
-  }
-
-  .icon-doc {
-    background: #1c7ed6;
-
-    &::before {
-      content: 'DOC';
-    }
-  }
-
-  .icon-xls {
-    background: #2b8a3e;
-
-    &::before {
-      content: 'XLS';
-    }
-  }
-
-  .icon-file {
-    background: #868e96;
-
-    &::before {
-      content: 'FILE';
-      transform: scale(0.9);
-    }
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
   }
 </style>
