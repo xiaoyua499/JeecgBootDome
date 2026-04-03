@@ -31,6 +31,13 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
 
   const getItemById = (itemId: string) => params.itemList.value.find((item) => item.id === itemId);
 
+  const normalizeItemIds = (sourceIds: string[]) =>
+    sourceIds.filter(
+      (itemId) =>
+        itemId !== 'root' &&
+        !sourceIds.some((possibleAncestorId) => possibleAncestorId !== itemId && isDescendantItem(params.itemList.value, itemId, possibleAncestorId))
+    );
+
   const resetClipboard = () => {
     params.clipboardState.value = null;
   };
@@ -83,10 +90,55 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
         : [params.contextMenuTargetId.value]
       : [...params.selectedItemIds.value];
 
-    return sourceIds.filter(
-      (itemId) =>
-        !sourceIds.some((possibleAncestorId) => possibleAncestorId !== itemId && isDescendantItem(params.itemList.value, itemId, possibleAncestorId))
-    );
+    return normalizeItemIds(sourceIds);
+  };
+
+  const moveItemsToFolder = (sourceIds: string[], targetFolderId: string, successMessage = '已移动到目标文件夹') => {
+    if (!params.canManage.value) {
+      return false;
+    }
+    const targetFolder = getItemById(targetFolderId);
+    if (!targetFolder || targetFolder.type !== 'folder') {
+      return false;
+    }
+
+    const normalizedIds = normalizeItemIds(sourceIds);
+    const sourceItems = normalizedIds.map((itemId) => getItemById(itemId)).filter(Boolean) as CabinetItem[];
+    if (!sourceItems.length) {
+      return false;
+    }
+
+    if (sourceItems.some((item) => item.id === targetFolderId || isDescendantFolder(params.itemList.value, targetFolderId, item.id))) {
+      message.warning('不能将文件夹移动到自身或其子文件夹中');
+      return false;
+    }
+
+    const movableItems = sourceItems.filter((item) => item.parentId !== targetFolderId);
+    if (!movableItems.length) {
+      return false;
+    }
+
+    const siblings = params.itemList.value.filter((item) => item.parentId === targetFolderId).sort((left, right) => left.orderNo - right.orderNo);
+    let nextOrderNo = siblings.length ? siblings[siblings.length - 1].orderNo + 10 : 10;
+    const siblingNames = siblings.map((item) => item.name);
+    const sourceParentIds = new Set<string | null>(movableItems.map((item) => item.parentId));
+
+    movableItems.forEach((item) => {
+      item.parentId = targetFolderId;
+      item.orderNo = nextOrderNo;
+      item.updateTime = formatNow();
+      item.name = buildSiblingName(item.name, siblingNames);
+      siblingNames.push(item.name);
+      nextOrderNo += 10;
+    });
+
+    const affectedParentIds = new Set<string | null>(sourceParentIds);
+    affectedParentIds.add(targetFolderId);
+    affectedParentIds.forEach((parentId) => reassignSiblingOrder(params.itemList.value, parentId));
+    params.selectedItemIds.value = movableItems.map((item) => item.id);
+    params.cancelRename();
+    message.success(successMessage);
+    return true;
   };
 
   const applyClipboardToFolder = (targetFolderId: string) => {
@@ -229,6 +281,7 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
     canPasteToCurrentFolder,
     canPasteToItemTarget,
     getItemById,
+    moveItemsToFolder,
     resetClipboard,
     handleCopy,
     handleCut,

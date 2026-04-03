@@ -2,10 +2,14 @@
 <template>
   <div
     class="file-item"
-    :class="[`file-item-${size}`, { selected, cutting }]"
+    :class="[`file-item-${size}`, { selected, cutting, 'drop-target': dropTarget }]"
     @click="emit('click', $event)"
     @dblclick="emit('dblclick', $event)"
     @contextmenu.prevent="emit('contextmenu', $event)"
+    @dragenter.prevent="emit('dragenter', $event)"
+    @dragover.prevent="emit('dragover', $event)"
+    @dragleave="emit('dragleave', $event)"
+    @drop.prevent="emit('drop', $event)"
   >
     <div class="file-icon" :class="`icon-${iconType}`"></div>
     <template v-if="editing">
@@ -37,6 +41,7 @@
     size: 'large' | 'small';
     selected: boolean;
     cutting?: boolean;
+    dropTarget?: boolean;
     editing?: boolean;
     editValue?: string;
   }>();
@@ -45,6 +50,10 @@
     (e: 'click', event: MouseEvent): void;
     (e: 'dblclick', event: MouseEvent): void;
     (e: 'contextmenu', event: MouseEvent): void;
+    (e: 'dragenter', event: DragEvent): void;
+    (e: 'dragover', event: DragEvent): void;
+    (e: 'dragleave', event: DragEvent): void;
+    (e: 'drop', event: DragEvent): void;
     (e: 'update:editValue', value: string): void;
     (e: 'submitRename'): void;
     (e: 'cancelRename'): void;
@@ -92,6 +101,12 @@
 
     &.cutting {
       opacity: 0.56;
+    }
+
+    &.drop-target {
+      background: #e7f1ff;
+      border-color: #4a90ff;
+      box-shadow: inset 0 0 0 1px rgb(74 144 255 / 20%);
     }
   }
 

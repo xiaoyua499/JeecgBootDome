@@ -14,14 +14,16 @@
         <div v-if="group.title" class="file-group-title">{{ group.title }}</div>
         <Draggable
           class="file-grid"
-          :class="[`size-${gridIconSize}`, { 'sortable-disabled': sortField !== 'manual' }]"
+          :class="[`size-${gridIconSize}`, { 'sortable-disabled': sortField !== 'manual' || !!dropTargetFolderId }]"
           :model-value="group.items"
           item-key="id"
-          :disabled="sortField !== 'manual' || !canManage"
+          :disabled="!canManage || !!dropTargetFolderId"
           ghost-class="file-drag-ghost"
           chosen-class="file-drag-chosen"
           drag-class="file-drag-active"
           :animation="180"
+          @start="emit('item-drag-start', String($event.item?.dataset.fileId || ''), $event)"
+          @end="emit('item-drag-end')"
           @update:modelValue="emit('grid-order-change', group, $event)"
         >
           <template #item="{ element }">
@@ -32,11 +34,16 @@
               :size="gridIconSize"
               :selected="selectedIdSet.has(element.id)"
               :cutting="clipboardCutIdSet.has(element.id)"
+              :drop-target="dropTargetFolderId === element.id"
               :editing="isRenaming(element.id)"
               :edit-value="renamingValue"
               @click="emit('item-click', element.id, $event)"
               @dblclick="emit('open', element)"
               @contextmenu="emit('item-contextmenu', element, $event)"
+              @dragenter="element.type === 'folder' && emit('folder-drag-over', element, $event)"
+              @dragover="element.type === 'folder' && emit('folder-drag-over', element, $event)"
+              @dragleave="element.type === 'folder' && emit('folder-drag-leave', element, $event)"
+              @drop="element.type === 'folder' && emit('folder-drop', element, $event)"
               @update:editValue="emit('update:renamingValue', $event)"
               @submitRename="emit('submit-rename')"
               @cancelRename="emit('cancel-rename')"
@@ -109,10 +116,17 @@
             v-for="item in group.items"
             :key="item.id"
             class="grouped-table-row"
-            :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
+            :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id), 'drop-target': dropTargetFolderId === item.id }"
+            :draggable="canManage"
             @click="emit('item-click', item.id, $event)"
             @dblclick="emit('open', item)"
             @contextmenu.prevent="emit('item-contextmenu', item, $event)"
+            @dragstart="emit('item-drag-start', item.id, $event)"
+            @dragend="emit('item-drag-end')"
+            @dragenter.prevent="item.type === 'folder' && emit('folder-drag-over', item, $event)"
+            @dragover.prevent="item.type === 'folder' && emit('folder-drag-over', item, $event)"
+            @dragleave="item.type === 'folder' && emit('folder-drag-leave', item, $event)"
+            @drop.prevent="item.type === 'folder' && emit('folder-drop', item, $event)"
           >
             <div class="grouped-cell col-name">
               <span class="table-icon" :class="`icon-${resolveIconType(item)}`"></span>
@@ -247,6 +261,7 @@
     tableColumns: { type: Array as PropType<Record<string, unknown>[]>, required: true },
     selectedIdSet: { type: Object as PropType<Set<string>>, required: true },
     clipboardCutIdSet: { type: Object as PropType<Set<string>>, required: true },
+    dropTargetFolderId: { type: String, default: '' },
     selectionBox: { type: Object as PropType<SelectionBox>, required: true },
     contextMenu: { type: Object as PropType<ContextMenuState>, required: true },
     canPasteToCurrentFolder: { type: Boolean, required: true },
@@ -272,9 +287,14 @@
     (e: 'enter-folder', folderId: string): void;
     (e: 'grid-blank-mousedown', event: MouseEvent): void;
     (e: 'grid-order-change', group: GroupSection, nextItems: CabinetItem[]): void;
+    (e: 'item-drag-start', itemId: string, event: DragEvent): void;
+    (e: 'item-drag-end'): void;
     (e: 'item-click', itemId: string, event: MouseEvent): void;
     (e: 'open', item: CabinetItem): void;
     (e: 'item-contextmenu', item: CabinetItem, event: MouseEvent): void;
+    (e: 'folder-drag-over', item: CabinetItem, event: DragEvent): void;
+    (e: 'folder-drag-leave', item: CabinetItem, event: DragEvent): void;
+    (e: 'folder-drop', item: CabinetItem, event: DragEvent): void;
     (e: 'update:renamingValue', value: string): void;
     (e: 'submit-rename'): void;
     (e: 'cancel-rename'): void;
@@ -392,6 +412,11 @@
       opacity: 0.56;
     }
 
+    :deep(.ant-table-tbody > tr.table-row-drop-target > td) {
+      background: #e7f1ff !important;
+      box-shadow: inset 0 0 0 1px #4a90ff;
+    }
+
     :deep(.ant-table-tbody > tr:hover > td) {
       background: #eef4ff;
     }
@@ -479,6 +504,11 @@
 
     &.cutting {
       opacity: 0.56;
+    }
+
+    &.drop-target {
+      background: #e7f1ff;
+      box-shadow: inset 0 0 0 1px #4a90ff;
     }
   }
 
