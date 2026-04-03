@@ -2,7 +2,12 @@
 <template>
   <div class="cabinet-toolbar">
     <a-space>
-      <a-button v-if="canManage" type="primary" @click="emit('create-folder')">新建文件夹</a-button>
+      <Dropdown v-if="canManage" :trigger="['click']" :drop-menu-list="createMenuList" @menu-event="handleCreateMenuEvent">
+        <a-button type="primary">
+          新建
+          <Icon icon="ant-design:down-outlined" class="ml-1 text-[12px]" />
+        </a-button>
+      </Dropdown>
       <div v-if="canManage" ref="uploadWrapRef" class="cabinet-toolbar-upload-wrap">
         <a-upload :show-upload-list="false" :multiple="true" :before-upload="beforeUpload">
           <a-button>
@@ -97,8 +102,10 @@
 <script lang="ts" setup>
   import { ref } from 'vue';
   import type { PropType } from 'vue';
+  import { Dropdown } from '/@/components/Dropdown';
+  import type { DropMenu } from '/@/components/Dropdown';
   import { Icon } from '/@/components/Icon';
-  import type { GridIconSize, GroupField, SortField, SortOrder, ViewMode } from '../types';
+  import type { GridIconSize, GroupField, ItemType, SortField, SortOrder, ViewMode } from '../types';
 
   // 顶部工具栏：负责管理按钮、搜索、排序/分组入口和视图模式切换。
   const props = defineProps({
@@ -122,6 +129,16 @@
 
   const uploadWrapRef = ref<HTMLElement | null>(null);
 
+  const createMenuList: DropMenu[] = [
+    { event: 'file', text: '新建文件', icon: 'ant-design:file-add-outlined' },
+    { event: 'folder', text: '新建文件夹', icon: 'ant-design:folder-add-outlined' },
+  ];
+
+  function handleCreateMenuEvent(menu?: DropMenu) {
+    const type = menu?.event === 'file' ? 'file' : 'folder';
+    emit('create-item', type);
+  }
+
   /** 供右键菜单「上传」等场景触发与工具栏相同的文件选择框 */
   function openUploadDialog() {
     if (!props.canManage) {
@@ -136,7 +153,7 @@
   });
 
   const emit = defineEmits<{
-    (e: 'create-folder'): void;
+    (e: 'create-item', type: ItemType): void;
     (e: 'open-upload-progress'): void;
     (e: 'delete'): void;
     (e: 'refresh'): void;

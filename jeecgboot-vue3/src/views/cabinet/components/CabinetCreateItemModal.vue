@@ -85,7 +85,7 @@
 
   async function handleSubmit() {
     try {
-      const values = await validate<{ name: string }>();
+      const values = (await validate()) as { name?: string };
       const rawName = values.name?.trim() || '';
       // 文件名统一在提交前补默认扩展名，避免调用方各自处理。
       const finalName = itemType.value === 'file' ? ensureCabinetFileName(rawName) : rawName;
