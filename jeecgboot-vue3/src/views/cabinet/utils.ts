@@ -148,10 +148,14 @@ export function buildBreadcrumbItems(folderMap: Map<string, CabinetItem>, curren
   return result;
 }
 
+export const CABINET_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif'] as const;
+export const CABINET_VIDEO_EXTS = ['mp4', 'avi', 'mov'] as const;
+export const CABINET_CREATABLE_FILE_EXTS = ['txt', 'doc', 'docx', 'xls', 'xlsx', 'pdf'] as const;
+
 export function resolveIconType(item: CabinetItem) {
   if (item.type === 'folder') return 'folder';
-  if (['jpg', 'jpeg', 'png', 'gif'].includes(item.ext)) return 'image';
-  if (['mp4', 'avi', 'mov'].includes(item.ext)) return 'video';
+  if (CABINET_IMAGE_EXTS.includes(item.ext as (typeof CABINET_IMAGE_EXTS)[number])) return 'image';
+  if (CABINET_VIDEO_EXTS.includes(item.ext as (typeof CABINET_VIDEO_EXTS)[number])) return 'video';
   if (item.ext === 'pdf') return 'pdf';
   if (['zip', 'rar', '7z'].includes(item.ext)) return 'zip';
   if (['doc', 'docx'].includes(item.ext)) return 'doc';
@@ -240,6 +244,51 @@ export function buildSiblingName(name: string, siblingNames: string[]) {
     index += 1;
   }
   return nextName;
+}
+
+export function buildIndexedSiblingName(name: string, siblingNames: string[]) {
+  const trimmed = name.trim();
+  if (!siblingNames.includes(trimmed)) {
+    return trimmed;
+  }
+  const dotIndex = trimmed.lastIndexOf('.');
+  const hasExt = dotIndex > 0;
+  const baseName = hasExt ? trimmed.slice(0, dotIndex) : trimmed;
+  const extName = hasExt ? trimmed.slice(dotIndex) : '';
+  let index = 2;
+  let nextName = `${baseName}(${index})${extName}`;
+  while (siblingNames.includes(nextName)) {
+    index += 1;
+    nextName = `${baseName}(${index})${extName}`;
+  }
+  return nextName;
+}
+
+export function ensureCabinetFileName(name: string, fallbackExt = 'txt') {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const dotIndex = trimmed.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === trimmed.length - 1) {
+    return `${trimmed}.${fallbackExt}`;
+  }
+  return trimmed;
+}
+
+export function resolveCabinetFileExt(name: string, fallbackExt = 'txt') {
+  const normalized = ensureCabinetFileName(name, fallbackExt);
+  const dotIndex = normalized.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === normalized.length - 1) {
+    return fallbackExt;
+  }
+  return normalized.slice(dotIndex + 1).toLowerCase();
+}
+
+// 新建文件采用白名单，避免图片/视频/压缩包等类型需要反复追加黑名单。
+export function isCabinetCreatableFileExt(ext: string) {
+  const normalized = ext.trim().toLowerCase();
+  return CABINET_CREATABLE_FILE_EXTS.includes(normalized as (typeof CABINET_CREATABLE_FILE_EXTS)[number]);
 }
 
 export function reassignSiblingOrder(items: CabinetItem[], parentId: string | null) {

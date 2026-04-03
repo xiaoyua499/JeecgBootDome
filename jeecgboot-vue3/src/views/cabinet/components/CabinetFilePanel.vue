@@ -127,7 +127,8 @@
     <ul v-if="contextMenu.visible && contextMenu.mode === 'blank'" class="context-menu context-menu-blank"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
       <li v-if="canPasteToCurrentFolder" @click="emit('paste')">粘贴</li>
-      <li v-if="canManage" @click="emit('create-folder')">新建文件夹</li>
+      <li v-if="canManage" @click="emit('create-item', 'file')">新建文件</li>
+      <li v-if="canManage" @click="emit('create-item', 'folder')">新建文件夹</li>
       <li v-if="canManage" @click="emit('upload')">上传</li>
       <li @click="emit('refresh')">刷新</li>
       <li class="with-children">
@@ -196,7 +197,7 @@
 import Draggable from 'vuedraggable';
 import { ref } from 'vue';
 import type { PropType } from 'vue';
-import type { BreadcrumbItem, CabinetItem, GridIconSize, GroupField, GroupSection, SortField, SortOrder, ViewMode } from '../types';
+import type { BreadcrumbItem, CabinetItem, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
 import { resolveIconType, resolveTypeLabel } from '../utils';
 import FileItem from './FileItem.vue';
 
@@ -265,7 +266,7 @@ const emit = defineEmits<{
   (e: 'rename'): void;
   (e: 'delete'): void;
   (e: 'view-property'): void;
-  (e: 'create-folder'): void;
+  (e: 'create-item', type: ItemType): void;
   (e: 'upload'): void;
   (e: 'refresh'): void;
   (e: 'change-sort-field', value: SortField): void;

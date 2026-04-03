@@ -5,7 +5,7 @@
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
-      @create-folder="handleCreateFolder" @open-upload-progress="uploadProgressOpen = true"
+      @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
       @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="gridIconSize = $event"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -30,26 +30,30 @@
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
         @open-menu-action="handleOpenMenuAction" @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
         @paste-to-item="handlePasteToItem" @rename="handleRename" @delete="handleDelete"
-        @view-property="handleViewProperty" @create-folder="handleCreateFolder" @upload="handleUpload"
+        @view-property="handleViewProperty" @create-item="handleCreateItem" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
         @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
         @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop" />
     </div>
 
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
+    <CabinetCreateItemModal @register="registerCreateItemModal" @success="handleCreateItemSuccess" />
   </div>
 </template>
 
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { message } from 'ant-design-vue';
+import { useModal } from '/@/components/Modal';
 import { createMockCabinetItems } from '../mockData';
 import { useCabinetClipboard } from '../composables/useCabinetClipboard';
 import { useCabinetComputed } from '../composables/useCabinetComputed';
 import { useCabinetSelection } from '../composables/useCabinetSelection';
 import { useCabinetUpload } from '../composables/useCabinetUpload';
 import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
-import type { CabinetItem, ClipboardState, GridIconSize, GroupField, GroupSection, SortField, SortOrder, ViewMode } from '../types';
+import type { CabinetItem, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
+import { buildIndexedSiblingName, formatNow, generateItemId, resolveCabinetFileExt } from '../utils';
+import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
 import CabinetToolbar from './CabinetToolbar.vue';
 import CabinetTreePanel from './CabinetTreePanel.vue';
@@ -203,6 +207,7 @@ const { ingestDataTransfer, ingestPlainFiles } = useCabinetUpload({
 });
 
 const { enqueueFiles, disposeAllTimers } = useCabinetUploadTasks();
+const [registerCreateItemModal, { openModal: openCreateItemModal }] = useModal();
 
 const CABINET_UPLOAD_NO_AUTO_POPUP_KEY = 'cabinet-upload-no-auto-popup';
 
@@ -420,34 +425,51 @@ const handleRefresh = () => {
   hideContextMenu();
 };
 
-const handleCreateFolder = () => {
+// 默认名统一基于当前目录全部同级名称生成，避免文件与文件夹重名。
+const buildCreateItemDefaultName = (type: ItemType) => {
+  const siblingNames = itemList.value
+    .filter((item) => item.parentId === currentFolderId.value)
+    .map((item) => item.name);
+  const baseName = type === 'folder' ? '新建文件夹' : '新建文件.txt';
+  return {
+    siblingNames,
+    defaultName: buildIndexedSiblingName(baseName, siblingNames),
+  };
+};
+
+const handleCreateItem = (type: ItemType) => {
   if (!props.canManage) {
     message.warning('当前页面无新建权限');
     hideContextMenu();
     return;
   }
-  const siblingFolders = itemList.value.filter((item) => item.type === 'folder' && item.parentId === currentFolderId.value);
-  const baseName = '新建文件夹';
-  let folderName = baseName;
-  let index = 1;
-  while (siblingFolders.some((item) => item.name === folderName)) {
-    index += 1;
-    folderName = `${baseName}(${index})`;
-  }
-  const id = `folder-${Date.now()}`;
+  const { defaultName, siblingNames } = buildCreateItemDefaultName(type);
+  cancelRename();
+  hideContextMenu();
+  openCreateItemModal(true, {
+    type,
+    defaultName,
+    siblingNames,
+  });
+};
+
+const handleCreateItemSuccess = ({ type, name }: { type: ItemType; name: string }) => {
+  const now = formatNow();
+  const id = generateItemId(type);
+  // 新建结果在这里统一落库，保持工具栏、右键菜单等入口行为一致。
   itemList.value.push({
     id,
-    name: folderName,
-    type: 'folder',
-    size: '-',
-    createTime: '2026-04-03 11:50',
-    updateTime: '2026-04-03 12:00',
-    ext: 'folder',
+    name,
+    type,
+    size: type === 'folder' ? '-' : '0 B',
+    createTime: now,
+    updateTime: now,
+    ext: type === 'folder' ? 'folder' : resolveCabinetFileExt(name),
     orderNo: Date.now(),
     parentId: currentFolderId.value,
   });
   selectSingleItem(id);
-  message.success('文件夹已创建');
+  message.success(type === 'folder' ? '文件夹已创建' : '文件已创建');
 };
 
 const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '') => {
@@ -458,7 +480,7 @@ const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '')
   }
   const rect = filePanelRef.value.getBoundingClientRect();
   const menuWidth = mode === 'blank' ? 186 : 140;
-  const menuHeight = mode === 'blank' ? 230 : 140;
+  const menuHeight = mode === 'blank' ? 262 : 140;
   let left = event.clientX - rect.left + filePanelRef.value.scrollLeft;
   let top = event.clientY - rect.top + filePanelRef.value.scrollTop;
   const maxLeft = filePanelRef.value.clientWidth - menuWidth - 8;
