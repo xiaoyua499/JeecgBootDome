@@ -16,7 +16,7 @@
       <CabinetFilePanel :can-manage="props.canManage" :breadcrumb-items="breadcrumbItems"
         :grouped-sections="groupedSections" :sorted-filtered-folder-items="sortedFilteredFolderItems"
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
-        :drop-target-folder-id="dropTargetFolderId" :selection-box="selectionBox" :context-menu="contextMenu"
+        :selection-box="selectionBox" :context-menu="contextMenu"
         :can-paste-to-current-folder="canPasteToCurrentFolder" :can-paste-to-item-target="canPasteToItemTarget"
         :view-mode="viewMode" :grid-icon-size="gridIconSize" :sort-field="sortField" :sort-order="sortOrder"
         :group-field="groupField" :renaming-value="renamingValue" :property-modal-visible="propertyModalVisible"
@@ -25,9 +25,7 @@
         :set-grid-panel-ref="setGridPanelRef" @hide-context-menu="hideContextMenu"
         @blank-contextmenu="handleBlankContextMenu" @enter-folder="enterFolderById"
         @grid-blank-mousedown="handleGridBlankMouseDown" @grid-order-change="handleGridOrderChange"
-        @item-drag-start="handleItemDragStart" @item-drag-end="handleItemDragEnd" @item-click="handleItemClick"
-        @open="handleOpen" @item-contextmenu="handleItemContextMenu" @folder-drag-over="handleFolderDragOver"
-        @folder-drag-leave="handleFolderDragLeave" @folder-drop="handleFolderDrop"
+        @item-click="handleItemClick" @open="handleOpen" @item-contextmenu="handleItemContextMenu"
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
         @open-menu-action="handleOpenMenuAction" @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
         @paste-to-item="handlePasteToItem" @rename="handleRename" @delete="handleDelete"
@@ -78,9 +76,6 @@ const propertyItem = ref<CabinetItem | null>(null);
 const renamingItemId = ref('');
 const renamingValue = ref('');
 const clipboardState = ref<ClipboardState | null>(null);
-const draggedItemIds = ref<string[]>([]);
-const dropTargetFolderId = ref('');
-const dragHoverTimer = ref<number | null>(null);
 const canManageRef = computed(() => props.canManage);
 const contextMenuTargetId = computed(() => contextMenu.value.targetId);
 
@@ -175,7 +170,6 @@ const {
   canPasteToCurrentFolder,
   canPasteToItemTarget,
   getItemById,
-  moveItemsToFolder,
   handleCopy,
   handleCut,
   handlePaste,
@@ -284,7 +278,7 @@ const handleViewModeChange = (mode: ViewMode) => {
 };
 
 const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) => {
-  if (!nextItems.length || dropTargetFolderId.value) {
+  if (!nextItems.length) {
     return;
   }
   // 手动排序时仅更新当前分组内的顺序号，保持同目录其它分组顺序稳定。
@@ -306,74 +300,6 @@ const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) =>
       }
     });
   }
-};
-
-const resolveDraggedItemIds = (itemId: string) => {
-  if (!itemId) {
-    return [] as string[];
-  }
-  return selectedIdSet.value.has(itemId) ? [...selectedItemIds.value] : [itemId];
-};
-
-const clearDragState = () => {
-  draggedItemIds.value = [];
-  dropTargetFolderId.value = '';
-  if (dragHoverTimer.value) {
-    clearTimeout(dragHoverTimer.value);
-    dragHoverTimer.value = null;
-  }
-};
-
-const handleItemDragStart = (itemId: string, event: DragEvent) => {
-  if (!props.canManage || !itemId) {
-    return;
-  }
-  if (!selectedIdSet.value.has(itemId)) {
-    selectSingleItem(itemId);
-  }
-  draggedItemIds.value = resolveDraggedItemIds(itemId);
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', itemId);
-  }
-};
-
-const handleFolderDragOver = (item: CabinetItem, event: DragEvent) => {
-  if (!props.canManage || item.type !== 'folder' || !draggedItemIds.value.length) {
-    return;
-  }
-  event.preventDefault();
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move';
-  }
-  dropTargetFolderId.value = item.id;
-};
-
-const handleFolderDragLeave = (item: CabinetItem, event: DragEvent) => {
-  const relatedTarget = event.relatedTarget as Node | null;
-  const currentTarget = event.currentTarget as Node | null;
-  if (relatedTarget && currentTarget?.contains(relatedTarget)) {
-    return;
-  }
-  if (dropTargetFolderId.value === item.id) {
-    dropTargetFolderId.value = '';
-  }
-};
-
-const handleFolderDrop = (item: CabinetItem, event: DragEvent) => {
-  if (!props.canManage || item.type !== 'folder' || !draggedItemIds.value.length) {
-    return;
-  }
-  event.preventDefault();
-  const hasMoved = moveItemsToFolder(draggedItemIds.value, item.id, `已移动到 ${item.name}`);
-  if (hasMoved) {
-    hideContextMenu();
-  }
-  clearDragState();
-};
-
-const handleItemDragEnd = () => {
-  clearDragState();
 };
 
 const handleItemContextMenu = (item: CabinetItem, event: MouseEvent) => {
@@ -497,34 +423,12 @@ const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '')
 };
 
 const buildTableRowEvent = (record: CabinetItem) => ({
-  draggable: props.canManage,
+  draggable: false,
   onClick: (event: MouseEvent) => handleItemClick(record.id, event),
   onDblclick: () => handleOpen(record),
   onContextmenu: (event: MouseEvent) => {
     event.preventDefault();
     handleItemContextMenu(record, event);
-  },
-  onDragstart: (event: DragEvent) => handleItemDragStart(record.id, event),
-  onDragend: () => handleItemDragEnd(),
-  onDragenter: (event: DragEvent) => {
-    if (record.type === 'folder') {
-      handleFolderDragOver(record, event);
-    }
-  },
-  onDragover: (event: DragEvent) => {
-    if (record.type === 'folder') {
-      handleFolderDragOver(record, event);
-    }
-  },
-  onDragleave: (event: DragEvent) => {
-    if (record.type === 'folder') {
-      handleFolderDragLeave(record, event);
-    }
-  },
-  onDrop: (event: DragEvent) => {
-    if (record.type === 'folder') {
-      handleFolderDrop(record, event);
-    }
   },
 });
 
@@ -532,7 +436,6 @@ const buildTableRowClass = (record: CabinetItem) =>
   [
     selectedIdSet.value.has(record.id) ? 'table-row-selected' : '',
     clipboardCutIdSet.value.has(record.id) ? 'table-row-cutting' : '',
-    dropTargetFolderId.value === record.id ? 'table-row-drop-target' : '',
   ]
     .filter(Boolean)
     .join(' ');
