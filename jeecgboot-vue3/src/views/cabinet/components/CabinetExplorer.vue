@@ -1,10 +1,11 @@
 <!-- 文件柜主容器：负责页面状态、业务编排，以及连接工具栏、目录树和文件区子组件。 -->
 <template>
   <div class="cabinet-explorer">
-    <CabinetToolbar :can-manage="props.canManage" :selected-count="selectedItemIds.length"
+    <CabinetToolbar ref="cabinetToolbarRef" :can-manage="props.canManage" :selected-count="selectedItemIds.length"
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
-      :view-mode="viewMode" :grid-icon-size="gridIconSize" @create-folder="handleCreateFolder" @upload="handleUpload"
+      :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
+      @create-folder="handleCreateFolder"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
       @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="gridIconSize = $event"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -32,7 +33,7 @@
         @view-property="handleViewProperty" @create-folder="handleCreateFolder" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
         @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
-        @update:propertyModalVisible="propertyModalVisible = $event" />
+        @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop" />
     </div>
   </div>
 </template>
@@ -44,6 +45,7 @@ import { createMockCabinetItems } from '../mockData';
 import { useCabinetClipboard } from '../composables/useCabinetClipboard';
 import { useCabinetComputed } from '../composables/useCabinetComputed';
 import { useCabinetSelection } from '../composables/useCabinetSelection';
+import { useCabinetUpload } from '../composables/useCabinetUpload';
 import type { CabinetItem, ClipboardState, GridIconSize, GroupField, GroupSection, SortField, SortOrder, ViewMode } from '../types';
 import CabinetFilePanel from './CabinetFilePanel.vue';
 import CabinetToolbar from './CabinetToolbar.vue';
@@ -71,6 +73,7 @@ const currentFolderId = ref('root');
 const selectedTreeKeys = ref<string[]>(['root']);
 const filePanelRef = ref<HTMLElement | null>(null);
 const gridPanelRef = ref<HTMLElement | null>(null);
+const cabinetToolbarRef = ref<InstanceType<typeof CabinetToolbar> | null>(null);
 const propertyModalVisible = ref(false);
 const propertyItem = ref<CabinetItem | null>(null);
 const renamingItemId = ref('');
@@ -187,6 +190,31 @@ const {
   clearSelection,
   cancelRename,
 });
+
+const { ingestDataTransfer, ingestPlainFiles } = useCabinetUpload({
+  itemList,
+  currentFolderId,
+  canManage: canManageRef,
+});
+
+const uploadPickerQueue: File[] = [];
+let uploadPickerFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 与工具栏 a-upload 一致：拦截默认上传，批量写入当前目录（后续可替换为 JUpload 同款服务端上传） */
+const handleToolbarBeforeUpload = (file: File) => {
+  uploadPickerQueue.push(file);
+  if (uploadPickerFlushTimer) {
+    clearTimeout(uploadPickerFlushTimer);
+  }
+  uploadPickerFlushTimer = setTimeout(() => {
+    uploadPickerFlushTimer = null;
+    const batch = uploadPickerQueue.splice(0, uploadPickerQueue.length);
+    if (batch.length) {
+      ingestPlainFiles(batch, currentFolderId.value);
+    }
+  }, 0);
+  return false;
+};
 
 const isRenaming = (itemId: string) => renamingItemId.value === itemId;
 
@@ -364,7 +392,13 @@ const handleUpload = () => {
     hideContextMenu();
     return;
   }
-  message.info('仅演示按钮，未接入上传接口');
+  hideContextMenu();
+  cabinetToolbarRef.value?.openUploadDialog?.();
+};
+
+const handleUploadDrop = async (dataTransfer: DataTransfer) => {
+  hideContextMenu();
+  await ingestDataTransfer(dataTransfer);
 };
 
 const handleRefresh = () => {
@@ -459,6 +493,7 @@ onBeforeUnmount(() => {
 
 <style lang="less" scoped>
 .cabinet-explorer {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -474,4 +509,5 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
 }
+
 </style>

@@ -3,7 +3,14 @@
   <div class="cabinet-toolbar">
     <a-space>
       <a-button v-if="canManage" type="primary" @click="emit('create-folder')">新建文件夹</a-button>
-      <a-button v-if="canManage" @click="emit('upload')">上传</a-button>
+      <div v-if="canManage" ref="uploadWrapRef" class="cabinet-toolbar-upload-wrap">
+        <a-upload :show-upload-list="false" :multiple="true" :before-upload="beforeUpload">
+          <a-button>
+            <Icon icon="ant-design:upload-outlined" />
+            上传
+          </a-button>
+        </a-upload>
+      </div>
       <a-button v-if="canManage" danger :disabled="selectedCount === 0" @click="emit('delete')">删除</a-button>
       <a-button @click="emit('refresh')">刷新</a-button>
       <a-input-search
@@ -84,11 +91,13 @@
 </template>
 
 <script lang="ts" setup>
+  import { ref } from 'vue';
   import type { PropType } from 'vue';
+  import { Icon } from '/@/components/Icon';
   import type { GridIconSize, GroupField, SortField, SortOrder, ViewMode } from '../types';
 
   // 顶部工具栏：负责管理按钮、搜索、排序/分组入口和视图模式切换。
-  defineProps({
+  const props = defineProps({
     canManage: { type: Boolean, required: true },
     selectedCount: { type: Number, required: true },
     searchKeyword: { type: String, required: true },
@@ -100,11 +109,30 @@
     groupFieldLabel: { type: String, required: true },
     viewMode: { type: String as PropType<ViewMode>, required: true },
     gridIconSize: { type: String as PropType<GridIconSize>, required: true },
+    /** 与项目内 JUpload / a-upload 一致：返回 false 走自定义逻辑（如写入本地列表或调业务上传） */
+    beforeUpload: {
+      type: Function as PropType<(file: File) => boolean | Promise<boolean>>,
+      required: true,
+    },
+  });
+
+  const uploadWrapRef = ref<HTMLElement | null>(null);
+
+  /** 供右键菜单「上传」等场景触发与工具栏相同的文件选择框 */
+  function openUploadDialog() {
+    if (!props.canManage) {
+      return;
+    }
+    const input = uploadWrapRef.value?.querySelector?.('input[type="file"]') as HTMLInputElement | undefined;
+    input?.click();
+  }
+
+  defineExpose({
+    openUploadDialog,
   });
 
   const emit = defineEmits<{
     (e: 'create-folder'): void;
-    (e: 'upload'): void;
     (e: 'delete'): void;
     (e: 'refresh'): void;
     (e: 'search'): void;
@@ -125,6 +153,11 @@
     padding: 10px 14px;
     background: #ffffff;
     border-bottom: 1px solid #e4eaf2;
+  }
+
+  .cabinet-toolbar-upload-wrap {
+    display: inline-flex;
+    align-items: center;
   }
 
   .toolbar-search {

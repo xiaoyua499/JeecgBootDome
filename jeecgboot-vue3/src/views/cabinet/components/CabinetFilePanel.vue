@@ -10,6 +10,14 @@
       </a-breadcrumb>
     </div>
 
+    <div
+      class="cabinet-upload-zone"
+      :class="{ 'is-drag-over': uploadDragOver }"
+      @dragenter.prevent="handleUploadDragEnter"
+      @dragleave="handleUploadDragLeave"
+      @dragover.prevent="handleUploadDragOver"
+      @drop.prevent="handleUploadDrop"
+    >
     <div v-if="viewMode === 'grid'" :ref="setGridPanelRef" class="grid-panel"
       @mousedown="emit('grid-blank-mousedown', $event)">
       <template v-for="group in groupedSections" :key="group.key">
@@ -102,6 +110,7 @@
           </div>
         </div>
       </div>
+    </div>
     </div>
 
     <ul v-if="contextMenu.visible && contextMenu.mode === 'item'" class="context-menu"
@@ -264,7 +273,52 @@ const emit = defineEmits<{
   (e: 'change-group-field', value: GroupField): void;
   (e: 'change-view-mode', value: ViewMode): void;
   (e: 'update:propertyModalVisible', value: boolean): void;
+  (e: 'upload-drop', dataTransfer: DataTransfer): void;
 }>();
+
+const uploadDragOver = ref(false);
+
+const hasFilePayload = (event: DragEvent) => Boolean(event.dataTransfer?.types?.includes('Files'));
+
+const handleUploadDragEnter = (event: DragEvent) => {
+  if (!props.canManage || !hasFilePayload(event)) {
+    return;
+  }
+  uploadDragOver.value = true;
+};
+
+const handleUploadDragLeave = (event: DragEvent) => {
+  if (!props.canManage) {
+    return;
+  }
+  const zone = event.currentTarget as HTMLElement;
+  const related = event.relatedTarget as Node | null;
+  if (related && zone.contains(related)) {
+    return;
+  }
+  uploadDragOver.value = false;
+};
+
+const handleUploadDragOver = (event: DragEvent) => {
+  if (!props.canManage || !hasFilePayload(event)) {
+    return;
+  }
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+};
+
+const handleUploadDrop = (event: DragEvent) => {
+  if (!props.canManage || !hasFilePayload(event)) {
+    return;
+  }
+  uploadDragOver.value = false;
+  event.preventDefault();
+  if (event.dataTransfer) {
+    emit('upload-drop', event.dataTransfer);
+  }
+};
 
 const sameGroupSortArmed = ref(false);
 const sameGroupSortHoverKey = ref('');
@@ -343,10 +397,30 @@ const handleGridDragMove = (evt: DraggableMoveEvent) => {
 
 .cabinet-path {
   margin-bottom: 10px;
+  flex-shrink: 0;
   padding: 6px 10px;
   background: #f7f9fc;
   border: 1px solid #e8edf4;
   border-radius: 4px;
+}
+
+.cabinet-upload-zone {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cabinet-upload-zone.is-drag-over::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border: 2px dashed #4a90ff;
+  background: rgb(74 144 255 / 12%);
+  border-radius: 6px;
+  pointer-events: none;
 }
 
 .grid-panel {
