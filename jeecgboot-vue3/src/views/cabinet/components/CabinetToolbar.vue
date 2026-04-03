@@ -11,6 +11,10 @@
           </a-button>
         </a-upload>
       </div>
+      <a-button v-if="canManage" @click="emit('open-upload-progress')">
+        <Icon icon="ant-design:cloud-sync-outlined" />
+        上传状态
+      </a-button>
       <a-button v-if="canManage" danger :disabled="selectedCount === 0" @click="emit('delete')">删除</a-button>
       <a-button @click="emit('refresh')">刷新</a-button>
       <a-input-search
@@ -133,6 +137,7 @@
 
   const emit = defineEmits<{
     (e: 'create-folder'): void;
+    (e: 'open-upload-progress'): void;
     (e: 'delete'): void;
     (e: 'refresh'): void;
     (e: 'search'): void;

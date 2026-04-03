@@ -5,7 +5,7 @@
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
-      @create-folder="handleCreateFolder"
+      @create-folder="handleCreateFolder" @open-upload-progress="uploadProgressOpen = true"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
       @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="gridIconSize = $event"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -35,6 +35,8 @@
         @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
         @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop" />
     </div>
+
+    <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
   </div>
 </template>
 
@@ -46,10 +48,12 @@ import { useCabinetClipboard } from '../composables/useCabinetClipboard';
 import { useCabinetComputed } from '../composables/useCabinetComputed';
 import { useCabinetSelection } from '../composables/useCabinetSelection';
 import { useCabinetUpload } from '../composables/useCabinetUpload';
+import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
 import type { CabinetItem, ClipboardState, GridIconSize, GroupField, GroupSection, SortField, SortOrder, ViewMode } from '../types';
 import CabinetFilePanel from './CabinetFilePanel.vue';
 import CabinetToolbar from './CabinetToolbar.vue';
 import CabinetTreePanel from './CabinetTreePanel.vue';
+import CabinetUploadProgressModal from './CabinetUploadProgressModal.vue';
 
 // 文件柜主容器：负责状态管理、业务编排，以及把交互事件分发给各个子组件。
 interface Props {
@@ -74,6 +78,7 @@ const selectedTreeKeys = ref<string[]>(['root']);
 const filePanelRef = ref<HTMLElement | null>(null);
 const gridPanelRef = ref<HTMLElement | null>(null);
 const cabinetToolbarRef = ref<InstanceType<typeof CabinetToolbar> | null>(null);
+const uploadProgressOpen = ref(false);
 const propertyModalVisible = ref(false);
 const propertyItem = ref<CabinetItem | null>(null);
 const renamingItemId = ref('');
@@ -197,6 +202,10 @@ const { ingestDataTransfer, ingestPlainFiles } = useCabinetUpload({
   canManage: canManageRef,
 });
 
+const { enqueueFiles, disposeAllTimers } = useCabinetUploadTasks();
+
+const CABINET_UPLOAD_NO_AUTO_POPUP_KEY = 'cabinet-upload-no-auto-popup';
+
 const uploadPickerQueue: File[] = [];
 let uploadPickerFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -210,7 +219,12 @@ const handleToolbarBeforeUpload = (file: File) => {
     uploadPickerFlushTimer = null;
     const batch = uploadPickerQueue.splice(0, uploadPickerQueue.length);
     if (batch.length) {
-      ingestPlainFiles(batch, currentFolderId.value);
+      enqueueFiles(batch, currentFolderId.value, (f, pid) => {
+        ingestPlainFiles([f], pid, { silent: true });
+      });
+      if (localStorage.getItem(CABINET_UPLOAD_NO_AUTO_POPUP_KEY) !== '1') {
+        uploadProgressOpen.value = true;
+      }
     }
   }, 0);
   return false;
@@ -484,6 +498,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposeAllTimers();
   window.removeEventListener('click', handleGlobalClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
   window.removeEventListener('mousemove', handleMarqueeMouseMove);

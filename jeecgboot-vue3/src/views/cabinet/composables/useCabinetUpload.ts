@@ -119,7 +119,7 @@ export function useCabinetUpload(params: UseCabinetUploadParams) {
   };
 
   /** 从「选择文件」得到的列表（可含 webkitRelativePath）；与表单中 JUpload / a-upload 选文件流程对齐，由业务侧写入本地列表或后续接上传接口 */
-  const ingestPlainFiles = (files: File[], parentId: string) => {
+  const ingestPlainFiles = (files: File[], parentId: string, options?: { silent?: boolean }) => {
     if (!params.canManage.value || !files.length) {
       return;
     }
@@ -145,7 +145,9 @@ export function useCabinetUpload(params: UseCabinetUploadParams) {
     }
     if (count > 0) {
       reassignTouched(touched);
-      createMessage.success(`已添加 ${count} 个文件`);
+      if (!options?.silent) {
+        createMessage.success(`已添加 ${count} 个文件`);
+      }
     }
   };
 
