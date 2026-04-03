@@ -214,6 +214,22 @@ const CABINET_UPLOAD_NO_AUTO_POPUP_KEY = 'cabinet-upload-no-auto-popup';
 const uploadPickerQueue: File[] = [];
 let uploadPickerFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
+const openUploadProgressIfNeeded = () => {
+  if (localStorage.getItem(CABINET_UPLOAD_NO_AUTO_POPUP_KEY) !== '1') {
+    uploadProgressOpen.value = true;
+  }
+};
+
+const enqueuePlainFiles = (files: File[], parentId: string) => {
+  if (!files.length) {
+    return;
+  }
+  enqueueFiles(files, parentId, (file, targetParentId) => {
+    ingestPlainFiles([file], targetParentId, { silent: true });
+  });
+  openUploadProgressIfNeeded();
+};
+
 /** 与工具栏 a-upload 一致：拦截默认上传，批量写入当前目录（后续可替换为 JUpload 同款服务端上传） */
 const handleToolbarBeforeUpload = (file: File) => {
   uploadPickerQueue.push(file);
@@ -223,14 +239,7 @@ const handleToolbarBeforeUpload = (file: File) => {
   uploadPickerFlushTimer = setTimeout(() => {
     uploadPickerFlushTimer = null;
     const batch = uploadPickerQueue.splice(0, uploadPickerQueue.length);
-    if (batch.length) {
-      enqueueFiles(batch, currentFolderId.value, (f, pid) => {
-        ingestPlainFiles([f], pid, { silent: true });
-      });
-      if (localStorage.getItem(CABINET_UPLOAD_NO_AUTO_POPUP_KEY) !== '1') {
-        uploadProgressOpen.value = true;
-      }
-    }
+    enqueuePlainFiles(batch, currentFolderId.value);
   }, 0);
   return false;
 };
@@ -417,6 +426,14 @@ const handleUpload = () => {
 
 const handleUploadDrop = async (dataTransfer: DataTransfer) => {
   hideContextMenu();
+  // 纯文件拖拽改为复用上传任务队列，修复多文件拖拽时只处理一项的问题；
+  // 目录拖拽仍走递归解析逻辑，保留文件夹上传能力。
+  const items = Array.from(dataTransfer.items || []);
+  const hasDirectoryEntry = items.some((item) => item.webkitGetAsEntry?.()?.isDirectory);
+  if (!hasDirectoryEntry && dataTransfer.files?.length) {
+    enqueuePlainFiles(Array.from(dataTransfer.files), currentFolderId.value);
+    return;
+  }
   await ingestDataTransfer(dataTransfer);
 };
 
