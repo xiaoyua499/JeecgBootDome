@@ -48,7 +48,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { message } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
-import { adaptCabinetBootstrap, CABINET_ROOT_ID } from '../adapter';
+import { adaptCabinetBootstrap, adaptCabinetItem, CABINET_ROOT_ID } from '../adapter';
 import {
   bootstrapCabinet,
   copyCabinetItems,
@@ -58,14 +58,15 @@ import {
   moveCabinetItems,
   renameCabinetItem,
   updateCabinetIcon,
+  uploadCabinetBinary,
 } from '../cabinet.api';
 import { useCabinetClipboard } from '../composables/useCabinetClipboard';
 import { useCabinetComputed } from '../composables/useCabinetComputed';
 import { useCabinetSelection } from '../composables/useCabinetSelection';
-import { useCabinetUpload } from '../composables/useCabinetUpload';
+import { type CabinetUploadEntry, useCabinetUpload } from '../composables/useCabinetUpload';
 import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
 import type { CabinetItem, CabinetScope, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
-import { buildIndexedSiblingName, resolveCabinetFileExt } from '../utils';
+import { buildIndexedSiblingName, buildSiblingName, resolveCabinetFileExt } from '../utils';
 import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
 import CabinetCustomizeIconModal from './CabinetCustomizeIconModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
@@ -263,16 +264,16 @@ const {
 });
 
 const { ingestDataTransfer, ingestPlainFiles } = useCabinetUpload({
-  itemList,
   currentFolderId,
   canManage: canManageRef,
 });
 
-const { enqueueFiles, disposeAllTimers } = useCabinetUploadTasks();
+const { enqueueTasks, disposeAllTimers } = useCabinetUploadTasks();
 const [registerCreateItemModal, { openModal: openCreateItemModal }] = useModal();
 const [registerCustomizeIconModal, { openModal: openCustomizeIconModal }] = useModal();
 
 const CABINET_UPLOAD_NO_AUTO_POPUP_KEY = 'cabinet-upload-no-auto-popup';
+const uploadFolderAliasMap = new Map<string, string>();
 
 const uploadPickerQueue: File[] = [];
 let uploadPickerFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -283,17 +284,108 @@ const openUploadProgressIfNeeded = () => {
   }
 };
 
-const enqueuePlainFiles = (files: File[], parentId: string) => {
-  if (!files.length) {
-    return;
+const buildFolderAliasKey = (parentId: string, folderName: string) => `${parentId}::${folderName.trim() || '未命名文件夹'}`;
+
+const appendOptimisticItem = (createdItem: Parameters<typeof adaptCabinetItem>[0]) => {
+  const nextItem = adaptCabinetItem(createdItem);
+  if (itemList.value.some((item) => item.id === nextItem.id)) {
+    return nextItem;
   }
-  enqueueFiles(files, parentId, (file, targetParentId) => {
-    ingestPlainFiles([file], targetParentId, { silent: true });
-  });
-  openUploadProgressIfNeeded();
+  itemList.value.push(nextItem);
+  return nextItem;
 };
 
-/** 与工具栏 a-upload 一致：拦截默认上传，批量写入当前目录（后续可替换为 JUpload 同款服务端上传） */
+const collectSiblingNames = (parentId: string) =>
+  itemList.value
+    .filter((item) => item.parentId === parentId)
+    .map((item) => item.name);
+
+const ensureUploadFolder = async (parentId: string, folderName: string, signal: AbortSignal) => {
+  const normalizedName = folderName.trim() || '未命名文件夹';
+  const aliasKey = buildFolderAliasKey(parentId, normalizedName);
+  const aliasedFolderId = uploadFolderAliasMap.get(aliasKey);
+  if (aliasedFolderId && itemList.value.some((item) => item.id === aliasedFolderId)) {
+    return aliasedFolderId;
+  }
+  uploadFolderAliasMap.delete(aliasKey);
+  const existingFolder = itemList.value.find(
+    (item) => item.parentId === parentId && item.type === 'folder' && item.name === normalizedName,
+  );
+  if (existingFolder) {
+    uploadFolderAliasMap.set(aliasKey, existingFolder.id);
+    return existingFolder.id;
+  }
+  const uniqueName = buildSiblingName(normalizedName, collectSiblingNames(parentId));
+  const createdFolder = await createCabinetFolder(
+    {
+      scope: props.scope,
+      parentId: resolveApiParentId(parentId),
+      name: uniqueName,
+    },
+    { signal },
+  );
+  const nextFolder = appendOptimisticItem(createdFolder);
+  uploadFolderAliasMap.set(aliasKey, nextFolder.id);
+  return nextFolder.id;
+};
+
+const ensureUploadFolderPath = async (baseParentId: string, relativeFolders: string[], signal: AbortSignal) => {
+  let cursorParentId = baseParentId;
+  for (const segment of relativeFolders) {
+    cursorParentId = await ensureUploadFolder(cursorParentId, segment, signal);
+  }
+  return cursorParentId;
+};
+
+const resolveUploadTaskName = (entry: CabinetUploadEntry) =>
+  entry.relativeFolders.length ? `${entry.relativeFolders.join('/')}/${entry.fileName}` : entry.fileName;
+
+const uploadCabinetEntry = async (
+  entry: CabinetUploadEntry,
+  context: { signal: AbortSignal; setProgress: (progress: number) => void },
+) => {
+  const targetParentId = await ensureUploadFolderPath(entry.parentId, entry.relativeFolders, context.signal);
+  const fileName = buildSiblingName(entry.fileName, collectSiblingNames(targetParentId));
+  const uploadResult = await uploadCabinetBinary(entry.file, 'cabinet/file', {
+    signal: context.signal,
+    onProgress: (progress) => {
+      context.setProgress(progress * 0.92);
+    },
+  });
+  if (!uploadResult?.message) {
+    throw new Error('文件上传失败');
+  }
+  context.setProgress(96);
+  await createCabinetFile(
+    {
+      scope: props.scope,
+      parentId: resolveApiParentId(targetParentId),
+      name: fileName,
+      filePath: uploadResult.message,
+      sizeBytes: entry.file.size,
+      ext: resolveCabinetFileExt(fileName, 'file'),
+    },
+    { signal: context.signal },
+  );
+  context.setProgress(100);
+  await reloadBootstrap({ silent: true });
+};
+
+const enqueueUploadEntries = (entries: CabinetUploadEntry[]) => {
+  if (!entries.length) {
+    return;
+  }
+  enqueueTasks(
+    entries.map((entry) => ({
+      fileName: resolveUploadTaskName(entry),
+      run: ({ signal, setProgress }) => uploadCabinetEntry(entry, { signal, setProgress }),
+    })),
+  );
+  openUploadProgressIfNeeded();
+  message.success(entries.length === 1 ? '上传任务已开始' : `已加入 ${entries.length} 个上传任务`);
+};
+
+/** 与工具栏 a-upload 一致：拦截默认上传，批量排入真实上传队列。 */
 const handleToolbarBeforeUpload = (file: File) => {
   uploadPickerQueue.push(file);
   if (uploadPickerFlushTimer) {
@@ -302,7 +394,7 @@ const handleToolbarBeforeUpload = (file: File) => {
   uploadPickerFlushTimer = setTimeout(() => {
     uploadPickerFlushTimer = null;
     const batch = uploadPickerQueue.splice(0, uploadPickerQueue.length);
-    enqueuePlainFiles(batch, currentFolderId.value);
+    enqueueUploadEntries(ingestPlainFiles(batch, currentFolderId.value));
   }, 0);
   return false;
 };
@@ -505,20 +597,23 @@ const handleCustomizeIcon = () => {
   }
 };
 
-const handleCustomizeIconSuccess = ({ itemId, iconKey, customIcon }: { itemId: string; iconKey?: string; customIcon?: string }) => {
-  if (customIcon && customIcon.startsWith('data:')) {
-    const target = getItemById(itemId);
-    if (!target) {
-      return;
-    }
-    target.iconKey = iconKey;
-    target.customIcon = customIcon;
-    message.success('图标已更新，后续上传联调后可持久化保存');
-    return;
-  }
+const handleCustomizeIconSuccess = ({
+  itemId,
+  iconKey,
+  customIconFile,
+  customIconPath,
+}: {
+  itemId: string;
+  iconKey?: string;
+  customIconFile?: File;
+  customIconPath?: string;
+}) => {
   void (async () => {
     try {
-      await updateCabinetIcon({ id: itemId, iconKey, customIconPath: customIcon });
+      const uploadedCustomIconPath = customIconFile
+        ? (await uploadCabinetBinary(customIconFile, 'cabinet/icon')).message
+        : customIconPath;
+      await updateCabinetIcon({ id: itemId, iconKey, customIconPath: uploadedCustomIconPath });
       await reloadBootstrap({ silent: true });
       message.success('图标已更新');
     } catch (error) {}
@@ -540,10 +635,10 @@ const handleUploadDrop = async (dataTransfer: DataTransfer) => {
   const items = Array.from(dataTransfer.items || []);
   const hasDirectoryEntry = items.some((item) => item.webkitGetAsEntry?.()?.isDirectory);
   if (!hasDirectoryEntry && dataTransfer.files?.length) {
-    enqueuePlainFiles(Array.from(dataTransfer.files), currentFolderId.value);
+    enqueueUploadEntries(ingestPlainFiles(Array.from(dataTransfer.files), currentFolderId.value));
     return;
   }
-  await ingestDataTransfer(dataTransfer);
+  enqueueUploadEntries(await ingestDataTransfer(dataTransfer));
 };
 
 const handleRefresh = async () => {

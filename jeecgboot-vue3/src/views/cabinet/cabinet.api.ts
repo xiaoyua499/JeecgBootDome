@@ -1,7 +1,9 @@
 import { defHttp } from '/@/utils/http/axios';
+import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
 import type { CabinetScope } from './types';
 
 enum Api {
+  commonUpload = '/sys/common/upload',
   bootstrap = '/sys/cabinet/bootstrap',
   folder = '/sys/cabinet/folder',
   file = '/sys/cabinet/file',
@@ -38,6 +40,10 @@ export interface CabinetBootstrapDTO {
 interface CabinetScopedParentPayload {
   scope: CabinetScope;
   parentId: string | null;
+}
+
+interface CabinetRequestOptions {
+  signal?: AbortSignal;
 }
 
 interface CabinetCreateFolderPayload extends CabinetScopedParentPayload {
@@ -77,18 +83,20 @@ const normalizeParentId = (parentId: string | null) => parentId ?? 'root';
 export const bootstrapCabinet = (scope: CabinetScope) =>
   defHttp.get<CabinetBootstrapDTO>({ url: Api.bootstrap, params: { scope } });
 
-export const createCabinetFolder = (payload: CabinetCreateFolderPayload) =>
+export const createCabinetFolder = (payload: CabinetCreateFolderPayload, options?: CabinetRequestOptions) =>
   defHttp.post<CabinetBootstrapItemDTO>({
     url: Api.folder,
+    signal: options?.signal,
     params: {
       ...payload,
       parentId: normalizeParentId(payload.parentId),
     },
   });
 
-export const createCabinetFile = (payload: CabinetCreateFilePayload) =>
+export const createCabinetFile = (payload: CabinetCreateFilePayload, options?: CabinetRequestOptions) =>
   defHttp.post<CabinetBootstrapItemDTO>({
     url: Api.file,
+    signal: options?.signal,
     params: {
       ...payload,
       parentId: normalizeParentId(payload.parentId),
@@ -127,3 +135,29 @@ export const deleteCabinetItems = (itemIds: string[]) =>
 
 export const updateCabinetIcon = (payload: CabinetUpdateIconPayload) =>
   defHttp.put<CabinetBootstrapItemDTO>({ url: Api.icon, params: payload });
+
+export const uploadCabinetBinary = (
+  file: File,
+  biz: 'cabinet/file' | 'cabinet/icon',
+  options?: {
+    signal?: AbortSignal;
+    onProgress?: (progress: number) => void;
+  },
+) =>
+  defHttp.uploadFile<UploadApiResult>(
+    {
+      url: Api.commonUpload,
+      signal: options?.signal,
+      onUploadProgress: (progressEvent: ProgressEvent) => {
+        const loaded = Number(progressEvent.loaded || 0);
+        const total = Number(progressEvent.total || 0);
+        options?.onProgress?.(total > 0 ? (loaded / total) * 100 : 0);
+      },
+    },
+    {
+      file,
+      filename: file.name,
+      data: { biz },
+    },
+    { isReturnResponse: true },
+  );

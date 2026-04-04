@@ -78,7 +78,10 @@
 
   const emit = defineEmits<{
     (e: 'register', modal: unknown, uuid: string): void;
-    (e: 'success', payload: { itemId: string; iconKey?: string; customIcon?: string }): void;
+    (
+      e: 'success',
+      payload: { itemId: string; iconKey?: string; customIconFile?: File; customIconPath?: string },
+    ): void;
   }>();
 
   const uploadInputRef = ref<HTMLInputElement | null>(null);
@@ -87,6 +90,8 @@
   const defaultPreviewSrc = ref('');
   const selectedBuiltinKey = ref<CabinetBuiltInIconKey>('file');
   const uploadedCustomIcon = ref('');
+  const uploadedCustomIconFile = ref<File | null>(null);
+  const existingCustomIconPath = ref('');
   const selectedMode = ref<'default' | 'builtin' | 'custom'>('default');
 
   const builtInOptions = CABINET_BUILTIN_ICON_OPTIONS;
@@ -101,7 +106,9 @@
     defaultPreviewSrc.value = resolveCabinetIconSrc(resolveIconType({ ...item, iconKey: undefined, customIcon: undefined }), 'large');
     selectedBuiltinKey.value = (item.iconKey as CabinetBuiltInIconKey | undefined) || (resolveIconType(item) as CabinetBuiltInIconKey);
     uploadedCustomIcon.value = item.customIcon || '';
-    selectedMode.value = item.customIcon ? 'custom' : item.iconKey ? 'builtin' : 'default';
+    uploadedCustomIconFile.value = null;
+    existingCustomIconPath.value = item.customIconPath || '';
+    selectedMode.value = item.customIcon || item.customIconPath ? 'custom' : item.iconKey ? 'builtin' : 'default';
   });
 
   const previewIconSrc = computed(() => {
@@ -157,6 +164,8 @@
     }
     try {
       uploadedCustomIcon.value = await readFileAsDataUrl(file);
+      uploadedCustomIconFile.value = file;
+      existingCustomIconPath.value = '';
       selectedMode.value = 'custom';
     } catch {
       message.error('图标读取失败，请重试');
@@ -168,10 +177,14 @@
   function resetToDefault() {
     selectedMode.value = 'default';
     uploadedCustomIcon.value = '';
+    uploadedCustomIconFile.value = null;
+    existingCustomIconPath.value = '';
   }
 
   function clearCustomUpload() {
     uploadedCustomIcon.value = '';
+    uploadedCustomIconFile.value = null;
+    existingCustomIconPath.value = '';
     selectedMode.value = 'default';
   }
 
@@ -179,7 +192,9 @@
     emit('success', {
       itemId: itemId.value,
       iconKey: selectedMode.value === 'builtin' ? selectedBuiltinKey.value : undefined,
-      customIcon: selectedMode.value === 'custom' ? uploadedCustomIcon.value : undefined,
+      customIconFile: selectedMode.value === 'custom' ? uploadedCustomIconFile.value || undefined : undefined,
+      customIconPath:
+        selectedMode.value === 'custom' && !uploadedCustomIconFile.value ? existingCustomIconPath.value || undefined : undefined,
     });
     closeModal();
   }

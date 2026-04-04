@@ -61,9 +61,20 @@
                 <div class="progress-row-name" :title="task.fileName">{{ task.fileName }}</div>
                 <a-progress
                   :percent="Math.round(task.progress)"
-                  :status="task.status === 'completed' ? 'success' : task.status === 'paused' ? 'normal' : 'active'"
+                  :status="
+                    task.status === 'completed'
+                      ? 'success'
+                      : task.status === 'error'
+                        ? 'exception'
+                        : task.status === 'paused'
+                          ? 'normal'
+                          : 'active'
+                  "
                   :stroke-color="task.status === 'paused' ? '#b8c0cc' : undefined"
                 />
+                <div v-if="task.status === 'error' && task.errorMessage" class="progress-row-error" :title="task.errorMessage">
+                  {{ task.errorMessage }}
+                </div>
               </div>
               <div class="progress-row-actions">
                 <a-button
@@ -75,7 +86,7 @@
                   <Icon icon="ant-design:pause-circle-outlined" />
                 </a-button>
                 <a-button
-                  v-if="task.status === 'paused'"
+                  v-if="task.status === 'paused' || task.status === 'error'"
                   type="link"
                   size="small"
                   @click="resumeTask(task.id)"
@@ -109,7 +120,7 @@ const selectedIds = ref<Set<string>>(new Set());
 const filteredTasks = computed(() => {
   return tasks.value.filter((t) => {
     const inProg = t.status === 'waiting' || t.status === 'uploading' || t.status === 'paused';
-    const done = t.status === 'completed';
+    const done = t.status === 'completed' || t.status === 'error';
     const noFilter = !filterInProgress.value && !filterCompleted.value;
     if (noFilter) {
       return true;
@@ -311,6 +322,15 @@ function handleRemoveAll() {
   overflow: hidden;
   font-size: 13px;
   color: #1f2d3d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-row-error {
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #ff4d4f;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
