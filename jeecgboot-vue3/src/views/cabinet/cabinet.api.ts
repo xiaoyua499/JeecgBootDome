@@ -1,6 +1,6 @@
 import { defHttp } from '/@/utils/http/axios';
 import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
-import { useGlobSetting } from '/@/hooks/setting';
+import { getFileblob } from '/@/api/common/api';
 import { getHeaders } from '/@/utils/common/compUtils';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import type { CabinetScope, GridIconSize, GroupField, SortField, SortOrder, ViewMode } from './types';
@@ -139,8 +139,6 @@ interface CabinetUpdateOrderPayload {
 }
 
 const normalizeParentId = (parentId: string | null) => parentId ?? 'root';
-const globSetting = useGlobSetting();
-const cabinetDownloadUrl = `${globSetting.domainUrl}${Api.download}`;
 
 export const bootstrapCabinet = (scope: CabinetScope) =>
   defHttp.get<CabinetBootstrapDTO>({ url: Api.bootstrap, params: { scope } });
@@ -227,22 +225,7 @@ export const updateCabinetItemOrder = (payload: CabinetUpdateOrderPayload) =>
   });
 
 export const downloadCabinetItems = async (itemIds: string[], fileName: string) => {
-  const query = new URLSearchParams({ ids: itemIds.join(',') });
-  const response = await fetch(`${cabinetDownloadUrl}?${query.toString()}`, {
-    method: 'GET',
-    headers: {
-      ...getHeaders(),
-    } as HeadersInit,
-  });
-  if (!response.ok) {
-    throw new Error(`文件下载失败(${response.status})`);
-  }
-  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-  if (contentType.includes('application/json')) {
-    const result = await response.json().catch(() => null);
-    throw new Error(result?.message || '文件下载失败');
-  }
-  const blob = await response.blob();
+  const blob = await getFileblob(Api.download, { ids: itemIds.join(',') });
   const objectUrl = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.style.display = 'none';
