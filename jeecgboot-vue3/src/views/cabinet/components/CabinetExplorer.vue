@@ -699,32 +699,28 @@ const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) =>
   if (!nextItems.length) {
     return;
   }
-  // 手动排序时仅更新当前分组内的顺序号，保持同目录其它分组顺序稳定。
   const step = 10;
-  nextItems.forEach((item, index) => {
+  const pageStartSortNo = Math.max(0, (currentPage.value - 1) * pageSize.value) * step + step;
+  const replacedGroupIds = new Set(group.items.map((item) => item.id));
+  const nextPageItems = groupedSections.value.flatMap((section) =>
+    section.key === group.key
+      ? nextItems
+      : section.items.filter((item) => !replacedGroupIds.has(item.id))
+  );
+
+  nextPageItems.forEach((item, index) => {
     const currentItem = getItemById(item.id);
     if (currentItem) {
-      currentItem.orderNo = (index + 1) * step;
+      currentItem.orderNo = pageStartSortNo + index * step;
     }
   });
-  if (groupField.value !== 'none') {
-    const otherItems = currentFolderPageItems.value
-      .filter((item) => group.items.every((groupItem) => groupItem.id !== item.id))
-      .sort((left, right) => left.orderNo - right.orderNo);
-    otherItems.forEach((item, index) => {
-      const currentItem = getItemById(item.id);
-      if (currentItem) {
-        currentItem.orderNo = 1000 + index * step;
-      }
-    });
-  }
+  currentFolderPageItems.value = [...nextPageItems];
+
   void (async () => {
     try {
-      const currentFolderItems = currentFolderPageItems.value
-        .sort((left, right) => left.orderNo - right.orderNo);
       await updateCabinetItemOrder({
         parentId: resolveApiParentId(currentFolderId.value),
-        itemOrders: currentFolderItems.map((item) => ({
+        itemOrders: nextPageItems.map((item) => ({
           id: item.id,
           sortNo: item.orderNo,
         })),
