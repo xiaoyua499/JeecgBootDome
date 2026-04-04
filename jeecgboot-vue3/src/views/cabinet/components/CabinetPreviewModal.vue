@@ -80,11 +80,11 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { JCodeEditor, JEditor } from '/@/components/Form';
 import JMarkdownEditor from '/@/components/Form/src/jeecg/components/JMarkdownEditor.vue';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
-import { fetchCabinetFileText } from '../cabinet.api';
+import { fetchCabinetFileBlob, fetchCabinetFileText } from '../cabinet.api';
 import type { CabinetItem } from '../types';
 
 type PreviewKind = 'image' | 'pdf' | 'markdown' | 'code' | 'html' | 'unsupported';
@@ -106,10 +106,16 @@ const emit = defineEmits<{
 const loading = ref(false);
 const textContent = ref('');
 const errorText = ref('');
+const binaryPreviewUrl = ref('');
 let requestToken = 0;
 
 const normalizedExt = computed(() => props.item?.ext?.trim().toLowerCase() || '');
-const fileUrl = computed(() => (props.item?.filePath ? getFileAccessHttpUrl(props.item.filePath) : ''));
+const fileUrl = computed(() => {
+  if (binaryPreviewUrl.value) {
+    return binaryPreviewUrl.value;
+  }
+  return props.item?.filePath ? getFileAccessHttpUrl(props.item.filePath) : '';
+});
 
 const previewKind = computed<PreviewKind>(() => {
   if (!props.item || props.item.type !== 'file') {
@@ -181,15 +187,45 @@ const openInNewWindow = () => {
   }
 };
 
+const revokeBinaryPreviewUrl = () => {
+  if (binaryPreviewUrl.value) {
+    URL.revokeObjectURL(binaryPreviewUrl.value);
+    binaryPreviewUrl.value = '';
+  }
+};
+
 const needsTextContent = computed(() => ['markdown', 'code', 'html'].includes(previewKind.value));
+const needsBinaryContent = computed(() => ['image', 'pdf'].includes(previewKind.value));
 
 const loadPreviewContent = async () => {
   const currentToken = ++requestToken;
   errorText.value = '';
   textContent.value = '';
   loading.value = false;
+  revokeBinaryPreviewUrl();
 
   if (!props.open || !props.item || props.item.type !== 'file') {
+    return;
+  }
+
+  if (needsBinaryContent.value && props.item.filePath) {
+    loading.value = true;
+    try {
+      const blob = await fetchCabinetFileBlob(props.item.filePath);
+      if (currentToken !== requestToken) {
+        return;
+      }
+      binaryPreviewUrl.value = URL.createObjectURL(blob);
+    } catch (error: any) {
+      if (currentToken !== requestToken) {
+        return;
+      }
+      errorText.value = error?.message || '文件内容读取失败';
+    } finally {
+      if (currentToken === requestToken) {
+        loading.value = false;
+      }
+    }
     return;
   }
 
@@ -228,6 +264,10 @@ watch(
   },
   { immediate: true },
 );
+
+onBeforeUnmount(() => {
+  revokeBinaryPreviewUrl();
+});
 </script>
 
 <style lang="less" scoped>

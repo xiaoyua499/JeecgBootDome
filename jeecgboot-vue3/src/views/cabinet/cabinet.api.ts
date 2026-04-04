@@ -243,3 +243,16 @@ export const fetchCabinetFileText = async (filePath: string) => {
   }
   return response.text();
 };
+
+export const fetchCabinetFileBlob = async (filePath: string) => {
+  const response = await fetch(getFileAccessHttpUrl(filePath), {
+    method: 'GET',
+    headers: {
+      ...getHeaders(),
+    } as HeadersInit,
+  });
+  if (!response.ok) {
+    throw new Error(`文件读取失败(${response.status})`);
+  }
+  return response.blob();
+};
