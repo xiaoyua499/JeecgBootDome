@@ -202,9 +202,14 @@ export const CABINET_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp'] as const
 export const CABINET_VIDEO_EXTS = ['mp4', 'avi', 'mov'] as const;
 export const CABINET_CREATABLE_FILE_EXTS = ['txt', 'doc', 'docx', 'xls', 'xlsx', 'pdf'] as const;
 
+export function isCabinetImageExt(ext: string) {
+  const normalized = ext.trim().toLowerCase();
+  return CABINET_IMAGE_EXTS.includes(normalized as (typeof CABINET_IMAGE_EXTS)[number]);
+}
+
 export function resolveIconType(item: CabinetItem) {
   if (item.type === 'folder') return 'folder';
-  if (CABINET_IMAGE_EXTS.includes(item.ext as (typeof CABINET_IMAGE_EXTS)[number])) return 'image';
+  if (isCabinetImageExt(item.ext)) return 'image';
   if (CABINET_VIDEO_EXTS.includes(item.ext as (typeof CABINET_VIDEO_EXTS)[number])) return 'video';
   if (item.ext === 'pdf') return 'pdf';
   if (['zip', 'rar', '7z'].includes(item.ext)) return 'zip';

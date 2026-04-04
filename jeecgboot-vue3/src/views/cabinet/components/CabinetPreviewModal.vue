@@ -14,12 +14,8 @@
 
       <a-spin :spinning="loading" tip="正在加载预览...">
         <template v-if="item">
-          <div v-if="previewKind === 'image'" class="preview-image-shell">
-            <a-image class="preview-image" :src="fileUrl" :alt="item.name" />
-          </div>
-
           <iframe
-            v-else-if="previewKind === 'pdf'"
+            v-if="previewKind === 'pdf'"
             class="preview-frame"
             :src="fileUrl"
             frameborder="0"
@@ -86,10 +82,10 @@ import JMarkdownEditor from '/@/components/Form/src/jeecg/components/JMarkdownEd
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import { fetchCabinetFileBlob, fetchCabinetFileText } from '../cabinet.api';
 import type { CabinetItem } from '../types';
+import { isCabinetImageExt } from '../utils';
 
-type PreviewKind = 'image' | 'pdf' | 'markdown' | 'code' | 'html' | 'unsupported';
+type PreviewKind = 'pdf' | 'markdown' | 'code' | 'html' | 'unsupported';
 
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
 const MARKDOWN_EXTS = new Set(['md', 'markdown']);
 const HTML_EXTS = new Set(['html', 'htm']);
 const CODE_EXTS = new Set(['txt', 'json', 'js', 'ts', 'java', 'sql', 'css', 'xml', 'vue', 'sh']);
@@ -121,9 +117,6 @@ const previewKind = computed<PreviewKind>(() => {
   if (!props.item || props.item.type !== 'file') {
     return 'unsupported';
   }
-  if (IMAGE_EXTS.has(normalizedExt.value)) {
-    return 'image';
-  }
   if (normalizedExt.value === 'pdf') {
     return 'pdf';
   }
@@ -140,7 +133,7 @@ const previewKind = computed<PreviewKind>(() => {
 });
 
 const modalTitle = computed(() => (props.item ? `预览 - ${props.item.name}` : '文件预览'));
-const modalWidth = computed(() => (previewKind.value === 'image' ? 860 : 1080));
+const modalWidth = computed(() => 1080);
 
 const codeLanguage = computed(() => {
   switch (normalizedExt.value) {
@@ -195,7 +188,7 @@ const revokeBinaryPreviewUrl = () => {
 };
 
 const needsTextContent = computed(() => ['markdown', 'code', 'html'].includes(previewKind.value));
-const needsBinaryContent = computed(() => ['image', 'pdf'].includes(previewKind.value));
+const needsBinaryContent = computed(() => previewKind.value === 'pdf');
 
 const loadPreviewContent = async () => {
   const currentToken = ++requestToken;
@@ -205,6 +198,10 @@ const loadPreviewContent = async () => {
   revokeBinaryPreviewUrl();
 
   if (!props.open || !props.item || props.item.type !== 'file') {
+    return;
+  }
+
+  if (isCabinetImageExt(normalizedExt.value)) {
     return;
   }
 
@@ -279,18 +276,6 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 8px;
-}
-
-.preview-image-shell {
-  display: flex;
-  justify-content: center;
-  min-height: 320px;
-  padding: 8px 0;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: 68vh;
 }
 
 .preview-frame {

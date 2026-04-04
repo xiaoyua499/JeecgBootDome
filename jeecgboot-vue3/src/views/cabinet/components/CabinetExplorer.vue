@@ -48,6 +48,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
+import { createImgPreview } from '/@/components/Preview/index';
+import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import { adaptCabinetBootstrap, adaptCabinetItem, CABINET_ROOT_ID } from '../adapter';
 import {
   bootstrapCabinet,
@@ -70,7 +72,7 @@ import { useCabinetSelection } from '../composables/useCabinetSelection';
 import { type CabinetUploadEntry, useCabinetUpload } from '../composables/useCabinetUpload';
 import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
 import type { CabinetItem, CabinetScope, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
-import { buildIndexedSiblingName, buildSiblingName, resolveCabinetFileExt } from '../utils';
+import { buildIndexedSiblingName, buildSiblingName, isCabinetImageExt, resolveCabinetFileExt } from '../utils';
 import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
 import CabinetCustomizeIconModal from './CabinetCustomizeIconModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
@@ -605,6 +607,18 @@ const handleTreeSelect = (keys: Array<string | number>) => {
 const handleOpen = (item: CabinetItem) => {
   if (item.type === 'folder') {
     enterFolderById(item.id);
+    return;
+  }
+  if (item.filePath && isCabinetImageExt(item.ext)) {
+    previewModalVisible.value = false;
+    previewItem.value = null;
+    createImgPreview({
+      imageList: [getFileAccessHttpUrl(item.filePath)],
+      index: 0,
+      defaultWidth: 700,
+      rememberState: true,
+    });
+    hideContextMenu();
     return;
   }
   previewItem.value = item;
