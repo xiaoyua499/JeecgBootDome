@@ -106,6 +106,7 @@ const binaryPreviewUrl = ref('');
 let requestToken = 0;
 
 const normalizedExt = computed(() => props.item?.ext?.trim().toLowerCase() || '');
+const sourceFileUrl = computed(() => (props.item?.filePath ? getFileAccessHttpUrl(props.item.filePath) : ''));
 const fileUrl = computed(() => {
   if (binaryPreviewUrl.value) {
     return binaryPreviewUrl.value;
@@ -187,11 +188,111 @@ const richTextContent = computed(() => {
   }
   try {
     const documentNode = new DOMParser().parseFromString(content, 'text/html');
-    return documentNode.body?.innerHTML?.trim() || content;
+    return sanitizePreviewHtml(documentNode);
   } catch (error) {
     return content;
   }
 });
+
+const sanitizePreviewHtml = (documentNode: Document) => {
+  const body = documentNode.body;
+  if (!body) {
+    return textContent.value;
+  }
+
+  body.querySelectorAll('script, iframe, object, embed, form, input, button, textarea, select, option, base, meta, link, style').forEach((node) => {
+    node.remove();
+  });
+
+  body.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    Array.from(element.attributes).forEach((attribute) => {
+      const attributeName = attribute.name.toLowerCase();
+      const attributeValue = attribute.value;
+
+      if (attributeName.startsWith('on')) {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if (attributeName === 'srcset') {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if (attributeName === 'style' && containsTemplateMarker(attributeValue)) {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if (['src', 'href', 'poster', 'background'].includes(attributeName)) {
+        const normalizedUrl = normalizePreviewAssetUrl(attributeValue);
+        if (normalizedUrl) {
+          element.setAttribute(attribute.name, normalizedUrl);
+        } else {
+          element.removeAttribute(attribute.name);
+        }
+      }
+    });
+
+    if (element.tagName.toLowerCase() === 'a' && element.getAttribute('href')) {
+      element.setAttribute('target', '_blank');
+      element.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+
+  return body.innerHTML.trim() || textContent.value;
+};
+
+const containsTemplateMarker = (value: string) => {
+  return (
+    value.includes('<') ||
+    value.includes('>') ||
+    value.includes('{{') ||
+    value.includes('}}') ||
+    value.includes('<%') ||
+    value.includes('%>')
+  );
+};
+
+const normalizePreviewAssetUrl = (value: string) => {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return '';
+  }
+
+  const normalizedValue = trimmedValue.toLowerCase();
+  if (
+    containsTemplateMarker(trimmedValue) ||
+    normalizedValue.startsWith('javascript:') ||
+    normalizedValue.startsWith('vbscript:') ||
+    normalizedValue.startsWith('data:text/html')
+  ) {
+    return '';
+  }
+
+  if (
+    normalizedValue.startsWith('http://') ||
+    normalizedValue.startsWith('https://') ||
+    normalizedValue.startsWith('//') ||
+    normalizedValue.startsWith('data:') ||
+    normalizedValue.startsWith('blob:') ||
+    normalizedValue.startsWith('mailto:') ||
+    normalizedValue.startsWith('tel:') ||
+    normalizedValue.startsWith('#')
+  ) {
+    return trimmedValue;
+  }
+
+  if (!sourceFileUrl.value) {
+    return '';
+  }
+
+  try {
+    return new URL(trimmedValue, sourceFileUrl.value).toString();
+  } catch (error) {
+    return '';
+  }
+};
 
 const openInNewWindow = () => {
   if (fileUrl.value) {
