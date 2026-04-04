@@ -1,6 +1,6 @@
 import { defHttp } from '/@/utils/http/axios';
 import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
-import type { CabinetScope, GroupField, SortField, SortOrder } from './types';
+import type { CabinetScope, GridIconSize, GroupField, SortField, SortOrder, ViewMode } from './types';
 
 enum Api {
   commonUpload = '/sys/common/upload',
@@ -62,6 +62,8 @@ export interface CabinetPreferenceDTO {
   sortField: SortField;
   sortOrder: SortOrder;
   groupField: GroupField;
+  viewMode: ViewMode;
+  gridIconSize: GridIconSize;
 }
 
 interface CabinetScopedParentPayload {

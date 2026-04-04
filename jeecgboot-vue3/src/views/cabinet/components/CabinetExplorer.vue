@@ -7,7 +7,7 @@
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
       @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
-      @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="gridIconSize = $event"
+      @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="handleGridIconSizeChange"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
       @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange" />
 
@@ -97,7 +97,7 @@ const gridIconSize = ref<GridIconSize>('large');
 const searchKeyword = ref('');
 const sortField = ref<SortField>('manual');
 const sortOrder = ref<SortOrder>('asc');
-const groupField = ref<GroupField>('type');
+const groupField = ref<GroupField>('none');
 const currentFolderId = ref(CABINET_ROOT_ID);
 const selectedTreeKeys = ref<string[]>([CABINET_ROOT_ID]);
 const filePanelRef = ref<HTMLElement | null>(null);
@@ -152,18 +152,24 @@ const cancelRename = () => {
 const resolveApiParentId = (folderId: string) => (folderId === CABINET_ROOT_ID ? null : folderId);
 
 interface CabinetViewPreferenceState {
+  viewMode: ViewMode;
+  gridIconSize: GridIconSize;
   sortField: SortField;
   sortOrder: SortOrder;
   groupField: GroupField;
 }
 
 const getCurrentViewPreference = (): CabinetViewPreferenceState => ({
+  viewMode: viewMode.value,
+  gridIconSize: gridIconSize.value,
   sortField: sortField.value,
   sortOrder: sortOrder.value,
   groupField: groupField.value,
 });
 
 const applyViewPreference = (preference: CabinetViewPreferenceState) => {
+  viewMode.value = preference.viewMode;
+  gridIconSize.value = preference.gridIconSize;
   sortField.value = preference.sortField;
   sortOrder.value = preference.sortOrder;
   groupField.value = preference.groupField;
@@ -186,6 +192,8 @@ const mergeFolderViewItems = (items: Parameters<typeof adaptCabinetItem>[0][]) =
 const loadViewPreference = async () => {
   const result = await fetchCabinetPreference(props.scope);
   applyViewPreference({
+    viewMode: result.viewMode,
+    gridIconSize: result.gridIconSize,
     sortField: result.sortField,
     sortOrder: result.sortOrder,
     groupField: result.groupField,
@@ -195,6 +203,8 @@ const loadViewPreference = async () => {
 const persistViewPreference = async () => {
   await updateCabinetPreference({
     scope: props.scope,
+    viewMode: viewMode.value,
+    gridIconSize: gridIconSize.value,
     sortField: sortField.value,
     sortOrder: sortOrder.value,
     groupField: groupField.value,
@@ -236,6 +246,26 @@ const savePreferenceAndSyncFolderView = async (
     await syncFolderView(options);
   } catch (error) {
     applyViewPreference(previousPreference);
+  }
+};
+
+const savePreferenceAndApplyLocally = async (
+  nextPreference: Partial<CabinetViewPreferenceState>,
+  options?: { showError?: boolean },
+) => {
+  const previousPreference = getCurrentViewPreference();
+  applyViewPreference({
+    ...previousPreference,
+    ...nextPreference,
+  });
+  hideContextMenu();
+  try {
+    await persistViewPreference();
+  } catch (error) {
+    applyViewPreference(previousPreference);
+    if (options?.showError) {
+      message.error('视图偏好保存失败');
+    }
   }
 };
 
@@ -590,8 +620,11 @@ const handleGroupFieldChange = (field: GroupField) => {
 };
 
 const handleViewModeChange = (mode: ViewMode) => {
-  viewMode.value = mode;
-  hideContextMenu();
+  void savePreferenceAndApplyLocally({ viewMode: mode }, { showError: true });
+};
+
+const handleGridIconSizeChange = (size: GridIconSize) => {
+  void savePreferenceAndApplyLocally({ gridIconSize: size }, { showError: true });
 };
 
 const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) => {

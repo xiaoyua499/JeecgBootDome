@@ -15,4 +15,8 @@ public class CabinetPreferenceDTO {
     private String sortOrder;
 
     private String groupField;
+
+    private String viewMode;
+
+    private String gridIconSize;
 }

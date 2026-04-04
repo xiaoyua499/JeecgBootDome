@@ -15,4 +15,8 @@ public class CabinetPreferenceVO {
     private String sortOrder;
 
     private String groupField;
+
+    private String viewMode;
+
+    private String gridIconSize;
 }

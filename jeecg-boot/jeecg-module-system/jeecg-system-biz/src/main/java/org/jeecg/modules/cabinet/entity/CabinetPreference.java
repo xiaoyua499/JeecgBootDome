@@ -27,5 +27,9 @@ public class CabinetPreference extends JeecgEntity {
 
     private String groupField;
 
+    private String viewMode;
+
+    private String gridIconSize;
+
     private Integer tenantId;
 }

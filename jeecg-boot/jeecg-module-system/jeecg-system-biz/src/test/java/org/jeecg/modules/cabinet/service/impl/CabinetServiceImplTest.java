@@ -182,16 +182,20 @@ class CabinetServiceImplTest {
     void preferenceIsStoredPerUserAndScope() {
         InMemoryCabinetService service = new InMemoryCabinetService();
 
-        CabinetPreferenceVO privatePreference = service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "name", "desc", "size"));
-        CabinetPreferenceVO publicPreference = service.updatePreference(preference(CabinetConstant.SCOPE_PUBLIC, "updateTime", "asc", "none"));
+        CabinetPreferenceVO privatePreference = service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "name", "desc", "size", "table", "small"));
+        CabinetPreferenceVO publicPreference = service.updatePreference(preference(CabinetConstant.SCOPE_PUBLIC, "updateTime", "asc", "none", "grid", "large"));
 
         assertThat(privatePreference.getSortField()).isEqualTo("name");
         assertThat(privatePreference.getSortOrder()).isEqualTo("desc");
         assertThat(privatePreference.getGroupField()).isEqualTo("size");
+        assertThat(privatePreference.getViewMode()).isEqualTo("table");
+        assertThat(privatePreference.getGridIconSize()).isEqualTo("small");
 
         assertThat(publicPreference.getSortField()).isEqualTo("updateTime");
         assertThat(publicPreference.getSortOrder()).isEqualTo("asc");
         assertThat(publicPreference.getGroupField()).isEqualTo("none");
+        assertThat(publicPreference.getViewMode()).isEqualTo("grid");
+        assertThat(publicPreference.getGridIconSize()).isEqualTo("large");
 
         assertThat(service.getPreference(CabinetConstant.SCOPE_PRIVATE).getSortField()).isEqualTo("name");
         assertThat(service.getPreference(CabinetConstant.SCOPE_PUBLIC).getSortField()).isEqualTo("updateTime");
@@ -206,37 +210,70 @@ class CabinetServiceImplTest {
         assertThat(preference.getSortField()).isEqualTo(CabinetConstant.DEFAULT_SORT_FIELD);
         assertThat(preference.getSortOrder()).isEqualTo(CabinetConstant.DEFAULT_SORT_ORDER);
         assertThat(preference.getGroupField()).isEqualTo(CabinetConstant.DEFAULT_GROUP_FIELD);
+        assertThat(preference.getViewMode()).isEqualTo(CabinetConstant.DEFAULT_VIEW_MODE);
+        assertThat(preference.getGridIconSize()).isEqualTo(CabinetConstant.DEFAULT_GRID_ICON_SIZE);
     }
 
     @Test
     void preferenceRejectsUnsupportedViewFields() {
         InMemoryCabinetService service = new InMemoryCabinetService();
 
-        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "rank", "asc", "type")))
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "rank", "asc", "type", "grid", "large")))
             .isInstanceOf(JeecgBootException.class)
             .hasMessageContaining("不支持的排序字段");
 
-        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "up", "type")))
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "up", "type", "grid", "large")))
             .isInstanceOf(JeecgBootException.class)
             .hasMessageContaining("不支持的排序方向");
 
-        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "asc", "folder")))
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "asc", "folder", "grid", "large")))
             .isInstanceOf(JeecgBootException.class)
             .hasMessageContaining("不支持的分组字段");
+
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "asc", "none", "card", "large")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("不支持的视图模式");
+
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "asc", "none", "grid", "middle")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("不支持的图标大小");
     }
 
     @Test
     void preferenceUpsertUpdatesExistingRecordInsteadOfDuplicating() {
         InMemoryCabinetService service = new InMemoryCabinetService();
 
-        service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "name", "asc", "type"));
-        service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "size", "desc", "none"));
+        service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "name", "asc", "type", "grid", "large"));
+        service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "size", "desc", "none", "table", "small"));
 
         assertThat(service.preferenceCount()).isEqualTo(1);
         CabinetPreferenceVO preference = service.getPreference(CabinetConstant.SCOPE_PRIVATE);
         assertThat(preference.getSortField()).isEqualTo("size");
         assertThat(preference.getSortOrder()).isEqualTo("desc");
         assertThat(preference.getGroupField()).isEqualTo("none");
+        assertThat(preference.getViewMode()).isEqualTo("table");
+        assertThat(preference.getGridIconSize()).isEqualTo("small");
+    }
+
+    @Test
+    void preferenceFallsBackToGridWhenLegacyViewModeIsMissing() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+
+        CabinetPreference legacyPreference = new CabinetPreference();
+        legacyPreference.setId("legacy");
+        legacyPreference.setScope(CabinetConstant.SCOPE_PRIVATE);
+        legacyPreference.setUserName("alice");
+        legacyPreference.setTenantId(0);
+        legacyPreference.setSortField("name");
+        legacyPreference.setSortOrder("asc");
+        legacyPreference.setGroupField("type");
+        service.putPreference(legacyPreference);
+
+        CabinetPreferenceVO preference = service.getPreference(CabinetConstant.SCOPE_PRIVATE);
+
+        assertThat(preference.getGroupField()).isEqualTo("type");
+        assertThat(preference.getViewMode()).isEqualTo(CabinetConstant.DEFAULT_VIEW_MODE);
+        assertThat(preference.getGridIconSize()).isEqualTo(CabinetConstant.DEFAULT_GRID_ICON_SIZE);
     }
 
     private static CabinetMoveDTO move(List<String> itemIds, String targetParentId) {
@@ -277,12 +314,14 @@ class CabinetServiceImplTest {
         return request;
     }
 
-    private static CabinetPreferenceDTO preference(String scope, String sortField, String sortOrder, String groupField) {
+    private static CabinetPreferenceDTO preference(String scope, String sortField, String sortOrder, String groupField, String viewMode, String gridIconSize) {
         CabinetPreferenceDTO request = new CabinetPreferenceDTO();
         request.setScope(scope);
         request.setSortField(sortField);
         request.setSortOrder(sortOrder);
         request.setGroupField(groupField);
+        request.setViewMode(viewMode);
+        request.setGridIconSize(gridIconSize);
         return request;
     }
 
@@ -346,6 +385,10 @@ class CabinetServiceImplTest {
 
         int preferenceCount() {
             return preferences.size();
+        }
+
+        void putPreference(CabinetPreference preference) {
+            preferences.put(preferenceKey(preference.getScope()), preference);
         }
 
         @Override

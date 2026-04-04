@@ -20,7 +20,9 @@ public interface CabinetConstant {
 
     String DEFAULT_SORT_FIELD = "manual";
     String DEFAULT_SORT_ORDER = "asc";
-    String DEFAULT_GROUP_FIELD = "type";
+    String DEFAULT_GROUP_FIELD = "none";
+    String DEFAULT_VIEW_MODE = "grid";
+    String DEFAULT_GRID_ICON_SIZE = "large";
 
     String ADMIN_USERNAME = "admin";
 }

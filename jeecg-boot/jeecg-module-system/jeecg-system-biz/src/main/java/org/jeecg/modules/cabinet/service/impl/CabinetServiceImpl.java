@@ -132,6 +132,8 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         preference.setSortField(normalizeSortField(request.getSortField()));
         preference.setSortOrder(normalizeSortOrder(request.getSortOrder()));
         preference.setGroupField(normalizeGroupField(request.getGroupField()));
+        preference.setViewMode(normalizeViewMode(request.getViewMode()));
+        preference.setGridIconSize(normalizeGridIconSize(request.getGridIconSize()));
 
         saveCabinetPreference(preference);
         return toPreferenceVO(normalizedScope, preference);
@@ -458,6 +460,8 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         result.setSortField(normalizeSortField(preference == null ? null : preference.getSortField()));
         result.setSortOrder(normalizeSortOrder(preference == null ? null : preference.getSortOrder()));
         result.setGroupField(normalizeGroupField(preference == null ? null : preference.getGroupField()));
+        result.setViewMode(normalizeViewMode(preference == null ? null : preference.getViewMode()));
+        result.setGridIconSize(normalizeGridIconSize(preference == null ? null : preference.getGridIconSize()));
         return result;
     }
 
@@ -939,6 +943,28 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             default:
                 throw new JeecgBootException("不支持的分组字段: " + groupField);
         }
+    }
+
+    protected String normalizeViewMode(String viewMode) {
+        String normalized = trimToNull(viewMode);
+        if (normalized == null) {
+            return CabinetConstant.DEFAULT_VIEW_MODE;
+        }
+        if (!"grid".equals(normalized) && !"table".equals(normalized)) {
+            throw new JeecgBootException("不支持的视图模式: " + viewMode);
+        }
+        return normalized;
+    }
+
+    protected String normalizeGridIconSize(String gridIconSize) {
+        String normalized = trimToNull(gridIconSize);
+        if (normalized == null) {
+            return CabinetConstant.DEFAULT_GRID_ICON_SIZE;
+        }
+        if (!"large".equals(normalized) && !"small".equals(normalized)) {
+            throw new JeecgBootException("不支持的图标大小: " + gridIconSize);
+        }
+        return normalized;
     }
 
     protected Comparator<String> nullSafeCollator() {
