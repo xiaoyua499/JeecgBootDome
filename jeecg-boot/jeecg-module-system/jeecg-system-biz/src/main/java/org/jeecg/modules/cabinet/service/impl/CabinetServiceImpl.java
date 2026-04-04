@@ -2,6 +2,7 @@ package org.jeecg.modules.cabinet.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.apache.shiro.SecurityUtils;
@@ -12,6 +13,8 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.cabinet.constant.CabinetConstant;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
+import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
@@ -27,6 +30,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 /**
@@ -76,9 +88,6 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         String parentId = normalizeParentId(request.getParentId());
         String name = requireName(request.getName(), "文件名称不能为空");
         String filePath = trimToNull(request.getFilePath());
-        if (oConvertUtils.isEmpty(filePath)) {
-            throw new JeecgBootException("文件路径不能为空");
-        }
 
         validateParent(parentId, context);
         ensureSiblingNameAvailable(context, parentId, name, null);
@@ -128,6 +137,131 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         }
         updateById(item);
         return toItemVO(item);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void moveItems(CabinetMoveDTO request) {
+        List<String> requestedIds = requireItemIds(request.getItemIds());
+        CabinetAccessContext context = resolveOperationContext(requestedIds, true);
+        String targetParentId = normalizeParentId(request.getTargetParentId());
+        requireTargetFolder(targetParentId, context);
+
+        List<CabinetItem> allItems = listCabinetItems(context);
+        Map<String, CabinetItem> itemMap = buildItemMap(allItems);
+        List<CabinetItem> sourceItems = normalizeSourceItems(requestedIds, itemMap);
+        if (sourceItems.isEmpty()) {
+            return;
+        }
+        if (targetParentId != null && sourceItems.stream().anyMatch(item -> item.getId().equals(targetParentId) || isDescendant(targetParentId, item.getId(), itemMap))) {
+            throw new JeecgBootException("不能将文件夹移动到自身或其子文件夹中");
+        }
+
+        List<CabinetItem> movableItems = sourceItems.stream()
+            .filter(item -> !sameParent(item.getParentId(), targetParentId))
+            .collect(Collectors.toList());
+        if (movableItems.isEmpty()) {
+            return;
+        }
+
+        Set<String> affectedParentIds = movableItems.stream()
+            .map(CabinetItem::getParentId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<String> siblingNames = allItems.stream()
+            .filter(item -> sameParent(item.getParentId(), targetParentId))
+            .map(CabinetItem::getName)
+            .collect(Collectors.toCollection(ArrayList::new));
+        int nextSortNo = resolveNextSortNo(allItems, targetParentId);
+        for (CabinetItem item : movableItems) {
+            item.setParentId(targetParentId);
+            item.setSortNo(nextSortNo);
+            item.setName(buildSiblingName(item.getName(), siblingNames));
+            siblingNames.add(item.getName());
+            updateById(item);
+            nextSortNo += 10;
+        }
+
+        affectedParentIds.forEach(this::refreshParentHasChild);
+        refreshParentHasChild(targetParentId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void copyItems(CabinetCopyDTO request) {
+        List<String> requestedIds = requireItemIds(request.getItemIds());
+        CabinetAccessContext context = resolveOperationContext(requestedIds, true);
+        String targetParentId = normalizeParentId(request.getTargetParentId());
+        requireTargetFolder(targetParentId, context);
+
+        List<CabinetItem> allItems = listCabinetItems(context);
+        Map<String, CabinetItem> itemMap = buildItemMap(allItems);
+        Map<String, List<CabinetItem>> childrenMap = buildChildrenMap(allItems);
+        List<CabinetItem> sourceItems = normalizeSourceItems(requestedIds, itemMap);
+        if (sourceItems.isEmpty()) {
+            return;
+        }
+
+        List<String> siblingNames = allItems.stream()
+            .filter(item -> sameParent(item.getParentId(), targetParentId))
+            .map(CabinetItem::getName)
+            .collect(Collectors.toCollection(ArrayList::new));
+        int nextSortNo = resolveNextSortNo(allItems, targetParentId);
+        List<CabinetItem> clonedItems = new ArrayList<>();
+        for (CabinetItem sourceItem : sourceItems) {
+            String clonedRootName = buildSiblingName(sourceItem.getName(), siblingNames);
+            siblingNames.add(clonedRootName);
+            cloneSubtree(sourceItem, targetParentId, clonedRootName, nextSortNo, context, childrenMap, clonedItems);
+            nextSortNo += 10;
+        }
+        if (!clonedItems.isEmpty()) {
+            saveBatch(clonedItems);
+            refreshParentHasChild(targetParentId);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteItems(String ids) {
+        List<String> requestedIds = splitItemIds(ids);
+        CabinetAccessContext context = resolveOperationContext(requestedIds, true);
+        List<CabinetItem> allItems = listCabinetItems(context);
+        Map<String, CabinetItem> itemMap = buildItemMap(allItems);
+        Map<String, List<CabinetItem>> childrenMap = buildChildrenMap(allItems);
+        List<CabinetItem> sourceItems = normalizeSourceItems(requestedIds, itemMap);
+        if (sourceItems.isEmpty()) {
+            return;
+        }
+
+        Set<String> deleteIdSet = new LinkedHashSet<>();
+        for (CabinetItem sourceItem : sourceItems) {
+            collectSubtreeIds(sourceItem.getId(), childrenMap, deleteIdSet);
+        }
+        List<CabinetItem> deletingItems = deleteIdSet.stream()
+            .map(itemMap::get)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+
+        Set<String> affectedParentIds = sourceItems.stream()
+            .map(CabinetItem::getParentId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> filePaths = deletingItems.stream()
+            .map(CabinetItem::getFilePath)
+            .map(this::trimToNull)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> customIconPaths = deletingItems.stream()
+            .map(CabinetItem::getCustomIconPath)
+            .map(this::trimToNull)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        removeByIds(new ArrayList<>(deleteIdSet));
+        affectedParentIds.forEach(this::refreshParentHasChild);
+        cleanupUnreferencedFilePaths(filePaths);
+        cleanupUnreferencedCustomIcons(customIconPaths);
     }
 
     protected CabinetItem requireAccessibleItem(String itemId, boolean writable) {
@@ -309,6 +443,197 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         vo.setCreateTime(item.getCreateTime());
         vo.setUpdateTime(item.getUpdateTime());
         return vo;
+    }
+
+    protected CabinetAccessContext resolveOperationContext(List<String> itemIds, boolean writable) {
+        CabinetItem firstItem = requireExistingItem(itemIds.get(0));
+        CabinetAccessContext context = resolveAccessContext(firstItem.getScope(), writable);
+        assertItemMatchesContext(firstItem, context);
+        for (int index = 1; index < itemIds.size(); index += 1) {
+            CabinetItem item = requireExistingItem(itemIds.get(index));
+            assertItemMatchesContext(item, context);
+        }
+        return context;
+    }
+
+    protected CabinetItem requireExistingItem(String itemId) {
+        if (oConvertUtils.isEmpty(itemId)) {
+            throw new JeecgBootException("项目ID不能为空");
+        }
+        CabinetItem item = getById(itemId);
+        if (item == null) {
+            throw new JeecgBootException("未找到对应的文件柜项目");
+        }
+        return item;
+    }
+
+    protected void requireTargetFolder(String targetParentId, CabinetAccessContext context) {
+        if (oConvertUtils.isEmpty(targetParentId)) {
+            return;
+        }
+        CabinetItem targetParent = requireExistingItem(targetParentId);
+        assertItemMatchesContext(targetParent, context);
+        if (!CabinetConstant.ITEM_TYPE_FOLDER.equals(targetParent.getItemType())) {
+            throw new JeecgBootException("目标目录不是文件夹");
+        }
+    }
+
+    protected List<String> requireItemIds(List<String> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            throw new JeecgBootException("请选择至少一个文件柜项目");
+        }
+        List<String> normalizedIds = itemIds.stream()
+            .map(this::trimToNull)
+            .filter(Objects::nonNull)
+            .distinct()
+            .collect(Collectors.toList());
+        if (normalizedIds.isEmpty()) {
+            throw new JeecgBootException("请选择至少一个文件柜项目");
+        }
+        return normalizedIds;
+    }
+
+    protected List<String> splitItemIds(String ids) {
+        if (oConvertUtils.isEmpty(ids)) {
+            throw new JeecgBootException("请选择至少一个文件柜项目");
+        }
+        return requireItemIds(List.of(ids.split(",")));
+    }
+
+    protected Map<String, CabinetItem> buildItemMap(List<CabinetItem> items) {
+        return items.stream().collect(Collectors.toMap(CabinetItem::getId, item -> item));
+    }
+
+    protected Map<String, List<CabinetItem>> buildChildrenMap(List<CabinetItem> items) {
+        Map<String, List<CabinetItem>> childrenMap = new HashMap<>();
+        for (CabinetItem item : items) {
+            String parentId = item.getParentId() == null ? CabinetConstant.ROOT_PARENT_ID : item.getParentId();
+            childrenMap.computeIfAbsent(parentId, key -> new ArrayList<>()).add(item);
+        }
+        childrenMap.values().forEach(children -> children.sort(defaultItemComparator()));
+        return childrenMap;
+    }
+
+    protected List<CabinetItem> normalizeSourceItems(List<String> requestedIds, Map<String, CabinetItem> itemMap) {
+        LinkedHashSet<String> requestedIdSet = new LinkedHashSet<>(requestedIds);
+        List<CabinetItem> normalizedItems = new ArrayList<>();
+        for (String itemId : requestedIdSet) {
+            boolean nestedInOtherSelection = requestedIdSet.stream()
+                .anyMatch(possibleAncestorId -> !possibleAncestorId.equals(itemId) && isDescendant(itemId, possibleAncestorId, itemMap));
+            if (!nestedInOtherSelection) {
+                CabinetItem item = itemMap.get(itemId);
+                if (item != null) {
+                    normalizedItems.add(item);
+                }
+            }
+        }
+        normalizedItems.sort(defaultItemComparator());
+        return normalizedItems;
+    }
+
+    protected boolean isDescendant(String itemId, String possibleAncestorId, Map<String, CabinetItem> itemMap) {
+        CabinetItem current = itemMap.get(itemId);
+        String cursorId = current == null ? null : current.getParentId();
+        while (cursorId != null) {
+            if (cursorId.equals(possibleAncestorId)) {
+                return true;
+            }
+            CabinetItem parent = itemMap.get(cursorId);
+            cursorId = parent == null ? null : parent.getParentId();
+        }
+        return false;
+    }
+
+    protected int resolveNextSortNo(List<CabinetItem> allItems, String parentId) {
+        return allItems.stream()
+            .filter(item -> sameParent(item.getParentId(), parentId))
+            .map(CabinetItem::getSortNo)
+            .filter(Objects::nonNull)
+            .max(Integer::compareTo)
+            .map(value -> value + 10)
+            .orElse(10);
+    }
+
+    protected boolean sameParent(String leftParentId, String rightParentId) {
+        return Objects.equals(leftParentId, rightParentId);
+    }
+
+    protected void cloneSubtree(CabinetItem sourceItem, String targetParentId, String targetName, Integer targetSortNo,
+                                CabinetAccessContext context, Map<String, List<CabinetItem>> childrenMap, List<CabinetItem> collector) {
+        CabinetItem clone = cloneItem(sourceItem, targetParentId, targetName, targetSortNo, context);
+        collector.add(clone);
+        for (CabinetItem child : childrenMap.getOrDefault(sourceItem.getId(), Collections.emptyList())) {
+            cloneSubtree(child, clone.getId(), child.getName(), child.getSortNo(), context, childrenMap, collector);
+        }
+    }
+
+    protected CabinetItem cloneItem(CabinetItem sourceItem, String parentId, String name, Integer sortNo, CabinetAccessContext context) {
+        CabinetItem clone = new CabinetItem();
+        clone.setId(IdWorker.getIdStr());
+        clone.setParentId(parentId);
+        clone.setScope(context.getScope());
+        clone.setOwnerKey(context.getOwnerKey());
+        clone.setTenantId(context.getTenantId());
+        clone.setItemType(sourceItem.getItemType());
+        clone.setName(name);
+        clone.setExt(sourceItem.getExt());
+        clone.setFilePath(sourceItem.getFilePath());
+        clone.setSizeBytes(sourceItem.getSizeBytes());
+        clone.setSortNo(sortNo);
+        clone.setIconKey(sourceItem.getIconKey());
+        clone.setCustomIconPath(sourceItem.getCustomIconPath());
+        clone.setHasChild(sourceItem.getHasChild());
+        return clone;
+    }
+
+    protected void collectSubtreeIds(String itemId, Map<String, List<CabinetItem>> childrenMap, Set<String> collector) {
+        if (!collector.add(itemId)) {
+            return;
+        }
+        for (CabinetItem child : childrenMap.getOrDefault(itemId, Collections.emptyList())) {
+            collectSubtreeIds(child.getId(), childrenMap, collector);
+        }
+    }
+
+    protected void cleanupUnreferencedFilePaths(Set<String> filePaths) {
+        for (String filePath : filePaths) {
+            if (count(new LambdaQueryWrapper<CabinetItem>().eq(CabinetItem::getFilePath, filePath)) == 0) {
+                cabinetStorageService.delete(filePath);
+            }
+        }
+    }
+
+    protected void cleanupUnreferencedCustomIcons(Set<String> customIconPaths) {
+        for (String customIconPath : customIconPaths) {
+            if (count(new LambdaQueryWrapper<CabinetItem>().eq(CabinetItem::getCustomIconPath, customIconPath)) == 0) {
+                cabinetStorageService.delete(customIconPath);
+            }
+        }
+    }
+
+    protected Comparator<CabinetItem> defaultItemComparator() {
+        return Comparator
+            .comparing(CabinetItem::getSortNo, Comparator.nullsLast(Integer::compareTo))
+            .thenComparing(CabinetItem::getCreateTime, Comparator.nullsLast(java.util.Date::compareTo))
+            .thenComparing(CabinetItem::getId, Comparator.nullsLast(String::compareTo));
+    }
+
+    protected String buildSiblingName(String name, List<String> siblingNames) {
+        String trimmed = name.trim();
+        if (!siblingNames.contains(trimmed)) {
+            return trimmed;
+        }
+        int dotIndex = trimmed.lastIndexOf('.');
+        boolean hasExt = dotIndex > 0;
+        String baseName = hasExt ? trimmed.substring(0, dotIndex) : trimmed;
+        String extName = hasExt ? trimmed.substring(dotIndex) : "";
+        int index = 2;
+        String nextName = baseName + " - 副本" + extName;
+        while (siblingNames.contains(nextName)) {
+            nextName = baseName + " - 副本 (" + index + ")" + extName;
+            index += 1;
+        }
+        return nextName;
     }
 
     protected String normalizeScope(String scope) {
