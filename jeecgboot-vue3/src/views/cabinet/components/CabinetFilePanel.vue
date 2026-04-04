@@ -117,6 +117,7 @@
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
       <li @click="emit('open-menu-action')">打开</li>
       <li v-if="contextMenuTargetItem?.type === 'file'" @click="emit('preview')">预览</li>
+      <li @click="emit('download')">下载</li>
       <li @click="emit('copy')">复制</li>
       <li v-if="canManage" @click="emit('cut')">剪切</li>
       <li v-if="canPasteToItemTarget" @click="emit('paste-to-item')">粘贴</li>
@@ -264,6 +265,7 @@ const emit = defineEmits<{
   (e: 'cancel-rename'): void;
   (e: 'open-menu-action'): void;
   (e: 'preview'): void;
+  (e: 'download'): void;
   (e: 'copy'): void;
   (e: 'cut'): void;
   (e: 'paste'): void;

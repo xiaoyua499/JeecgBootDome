@@ -16,6 +16,10 @@
           </a-button>
         </a-upload>
       </div>
+      <a-button :disabled="selectedCount === 0" @click="emit('download')">
+        <Icon icon="ant-design:download-outlined" />
+        下载
+      </a-button>
       <a-button v-if="canManage" danger :disabled="selectedCount === 0" @click="emit('delete')">删除</a-button>
       <a-button @click="emit('refresh')">刷新</a-button>
       <a-input-search
@@ -183,6 +187,7 @@
   const emit = defineEmits<{
     (e: 'create-item', type: ItemType): void;
     (e: 'open-upload-progress'): void;
+    (e: 'download'): void;
     (e: 'delete'): void;
     (e: 'refresh'): void;
     (e: 'search'): void;

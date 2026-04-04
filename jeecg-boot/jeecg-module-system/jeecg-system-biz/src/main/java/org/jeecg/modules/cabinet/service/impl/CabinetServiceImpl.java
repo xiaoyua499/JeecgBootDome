@@ -5,6 +5,10 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import jakarta.servlet.http.HttpServletResponse;
+import org.apache.commons.compress.archivers.zip.Zip64Mode;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
 import org.apache.shiro.SecurityUtils;
 import org.jeecg.common.config.TenantContext;
 import org.jeecg.common.exception.JeecgBootException;
@@ -35,15 +39,21 @@ import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StreamUtils;
 
-import java.util.List;
-import java.util.Locale;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.text.Collator;
+import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -369,6 +379,24 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         affectedParentIds.forEach(this::refreshParentHasChild);
         cleanupUnreferencedFilePaths(filePaths);
         cleanupUnreferencedCustomIcons(customIconPaths);
+    }
+
+    @Override
+    public void downloadItems(String ids, HttpServletResponse response) {
+        List<String> requestedIds = splitItemIds(ids);
+        CabinetAccessContext context = resolveOperationContext(requestedIds, false);
+        List<CabinetItem> allItems = listCabinetItems(context);
+        Map<String, CabinetItem> itemMap = buildItemMap(allItems);
+        Map<String, List<CabinetItem>> childrenMap = buildChildrenMap(allItems);
+        List<CabinetItem> sourceItems = normalizeSourceItems(requestedIds, itemMap);
+        if (sourceItems.isEmpty()) {
+            throw new JeecgBootException("未找到可下载的文件");
+        }
+        if (sourceItems.size() == 1 && CabinetConstant.ITEM_TYPE_FILE.equals(sourceItems.get(0).getItemType())) {
+            writeSingleFileResponse(sourceItems.get(0), response);
+            return;
+        }
+        writeZipResponse(sourceItems, childrenMap, response);
     }
 
     protected CabinetItem requireAccessibleItem(String itemId, boolean writable) {
@@ -747,6 +775,125 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             if (count(new LambdaQueryWrapper<CabinetItem>().eq(CabinetItem::getCustomIconPath, customIconPath)) == 0) {
                 cabinetStorageService.delete(customIconPath);
             }
+        }
+    }
+
+    protected void writeSingleFileResponse(CabinetItem item, HttpServletResponse response) {
+        prepareDownloadResponse(response, safeDownloadName(item.getName()), "application/octet-stream");
+        if (item.getSizeBytes() != null && item.getSizeBytes() > 0 && item.getSizeBytes() <= Integer.MAX_VALUE) {
+            response.setContentLength(item.getSizeBytes().intValue());
+        }
+        if (oConvertUtils.isEmpty(item.getFilePath())) {
+            flushResponse(response);
+            return;
+        }
+        try (InputStream inputStream = cabinetStorageService.openStream(item.getFilePath())) {
+            StreamUtils.copy(inputStream, response.getOutputStream());
+            flushResponse(response);
+        } catch (IOException e) {
+            throw new JeecgBootException("文件下载失败");
+        }
+    }
+
+    protected void writeZipResponse(List<CabinetItem> sourceItems, Map<String, List<CabinetItem>> childrenMap, HttpServletResponse response) {
+        prepareDownloadResponse(response, "文件柜下载_" + new Date().getTime() + ".zip", "application/zip");
+        try (ZipArchiveOutputStream zipOutputStream = new ZipArchiveOutputStream(response.getOutputStream())) {
+            zipOutputStream.setUseZip64(Zip64Mode.AsNeeded);
+            List<String> rootNames = new ArrayList<>();
+            for (CabinetItem sourceItem : sourceItems) {
+                String rootName = buildSiblingName(safeDownloadName(sourceItem.getName()), rootNames);
+                rootNames.add(rootName);
+                if (CabinetConstant.ITEM_TYPE_FOLDER.equals(sourceItem.getItemType())) {
+                    writeFolderToZip(sourceItem, rootName + "/", childrenMap, zipOutputStream);
+                } else {
+                    writeFileToZip(sourceItem, rootName, zipOutputStream);
+                }
+            }
+            zipOutputStream.finish();
+            flushResponse(response);
+        } catch (IOException e) {
+            throw new JeecgBootException("批量下载失败");
+        }
+    }
+
+    protected void writeFolderToZip(CabinetItem folder, String folderPath, Map<String, List<CabinetItem>> childrenMap,
+                                    ZipArchiveOutputStream zipOutputStream) throws IOException {
+        putDirectoryEntry(zipOutputStream, folderPath);
+        for (CabinetItem child : childrenMap.getOrDefault(folder.getId(), Collections.emptyList())) {
+            String childPath = folderPath + safeDownloadName(child.getName());
+            if (CabinetConstant.ITEM_TYPE_FOLDER.equals(child.getItemType())) {
+                writeFolderToZip(child, childPath + "/", childrenMap, zipOutputStream);
+            } else {
+                writeFileToZip(child, childPath, zipOutputStream);
+            }
+        }
+    }
+
+    protected void writeFileToZip(CabinetItem file, String entryName, ZipArchiveOutputStream zipOutputStream) throws IOException {
+        ZipArchiveEntry zipEntry = new ZipArchiveEntry(normalizeZipEntryName(entryName, false));
+        zipOutputStream.putArchiveEntry(zipEntry);
+        try {
+            if (oConvertUtils.isNotEmpty(file.getFilePath())) {
+                try (InputStream inputStream = cabinetStorageService.openStream(file.getFilePath())) {
+                    StreamUtils.copy(inputStream, zipOutputStream);
+                }
+            }
+        } finally {
+            zipOutputStream.closeArchiveEntry();
+        }
+    }
+
+    protected void putDirectoryEntry(ZipArchiveOutputStream zipOutputStream, String entryName) throws IOException {
+        ZipArchiveEntry zipEntry = new ZipArchiveEntry(normalizeZipEntryName(entryName, true));
+        zipOutputStream.putArchiveEntry(zipEntry);
+        zipOutputStream.closeArchiveEntry();
+    }
+
+    protected void prepareDownloadResponse(HttpServletResponse response, String fileName, String contentType) {
+        response.reset();
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(contentType);
+        response.setHeader("Content-Disposition", buildAttachmentHeader(fileName));
+    }
+
+    protected String buildAttachmentHeader(String fileName) {
+        String encodedName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+        return "attachment;filename*=utf-8''" + encodedName;
+    }
+
+    protected String normalizeZipEntryName(String entryName, boolean directory) {
+        String normalized = trimToNull(entryName);
+        if (normalized == null) {
+            return directory ? "未命名文件夹/" : "未命名文件";
+        }
+        List<String> sanitizedSegments = new ArrayList<>();
+        for (String segment : normalized.replace("\\", "/").split("/")) {
+            String trimmedSegment = trimToNull(segment);
+            if (trimmedSegment != null) {
+                sanitizedSegments.add(safeDownloadName(trimmedSegment));
+            }
+        }
+        String joined = sanitizedSegments.isEmpty() ? (directory ? "未命名文件夹" : "未命名文件") : String.join("/", sanitizedSegments);
+        return directory ? ensureDirectoryEntryName(joined) : joined;
+    }
+
+    protected String ensureDirectoryEntryName(String entryName) {
+        return entryName.endsWith("/") ? entryName : entryName + "/";
+    }
+
+    protected String safeDownloadName(String fileName) {
+        String normalized = trimToNull(fileName);
+        if (normalized == null) {
+            return "未命名文件";
+        }
+        return normalized.replace("/", "_").replace("\\", "_");
+    }
+
+    protected void flushResponse(HttpServletResponse response) {
+        try {
+            response.flushBuffer();
+        } catch (IOException e) {
+            throw new JeecgBootException("文件下载失败");
         }
     }
 

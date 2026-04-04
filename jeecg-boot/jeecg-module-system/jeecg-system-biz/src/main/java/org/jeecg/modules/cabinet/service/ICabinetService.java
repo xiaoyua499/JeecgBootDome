@@ -1,6 +1,7 @@
 package org.jeecg.modules.cabinet.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
@@ -44,4 +45,6 @@ public interface ICabinetService extends IService<CabinetItem> {
     void copyItems(CabinetCopyDTO request);
 
     void deleteItems(String ids);
+
+    void downloadItems(String ids, HttpServletResponse response);
 }

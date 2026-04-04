@@ -1,5 +1,6 @@
 import { defHttp } from '/@/utils/http/axios';
 import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
+import { downloadFile } from '/@/api/common/api';
 import { getHeaders } from '/@/utils/common/compUtils';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import type { CabinetScope, GridIconSize, GroupField, SortField, SortOrder, ViewMode } from './types';
@@ -17,6 +18,7 @@ enum Api {
   copy = '/sys/cabinet/copy',
   delete = '/sys/cabinet/delete',
   icon = '/sys/cabinet/icon',
+  download = '/sys/cabinet/download',
 }
 
 export interface CabinetBootstrapItemDTO {
@@ -204,6 +206,9 @@ export const updateCabinetItemOrder = (payload: CabinetUpdateOrderPayload) =>
       parentId: normalizeParentId(payload.parentId),
     },
   });
+
+export const downloadCabinetItems = (itemIds: string[], fileName: string) =>
+  downloadFile(Api.download, fileName, { ids: itemIds.join(',') });
 
 export const uploadCabinetBinary = (
   file: File,

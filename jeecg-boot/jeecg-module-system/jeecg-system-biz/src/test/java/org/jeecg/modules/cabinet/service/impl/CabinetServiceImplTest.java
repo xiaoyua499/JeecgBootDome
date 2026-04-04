@@ -17,6 +17,7 @@ import org.jeecg.modules.cabinet.service.ICabinetStorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.InputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -474,6 +475,11 @@ class CabinetServiceImplTest {
     private static class RecordingStorageService implements ICabinetStorageService {
 
         private final List<String> deletedPaths = new ArrayList<>();
+
+        @Override
+        public InputStream openStream(String filePath) {
+            return InputStream.nullInputStream();
+        }
 
         @Override
         public boolean delete(String filePath) {

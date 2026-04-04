@@ -6,6 +6,7 @@
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
       @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true"
+      @download="handleDownload"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
       @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="handleGridIconSizeChange"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -29,7 +30,8 @@
         @grid-blank-mousedown="handleGridBlankMouseDown" @grid-order-change="handleGridOrderChange"
         @item-click="handleItemClick" @open="handleOpen" @item-contextmenu="handleItemContextMenu"
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
-        @open-menu-action="handleOpenMenuAction" @preview="handlePreviewMenuAction" @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
+        @open-menu-action="handleOpenMenuAction" @preview="handlePreviewMenuAction" @download="handleDownload"
+        @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
         @paste-to-item="handlePasteToItem" @customize-icon="handleCustomizeIcon" @rename="handleRename" @delete="handleDelete"
         @view-property="handleViewProperty" @create-item="handleCreateItem" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -53,6 +55,7 @@ import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import { adaptCabinetBootstrap, adaptCabinetItem, CABINET_ROOT_ID } from '../adapter';
 import {
   bootstrapCabinet,
+  downloadCabinetItems,
   copyCabinetItems,
   createCabinetFile,
   createCabinetFolder,
@@ -733,6 +736,43 @@ const handlePreviewMenuAction = () => {
     return;
   }
   handleOpen(target);
+};
+
+const resolveDownloadItemIds = () => {
+  const targetId = contextMenu.value.targetId;
+  if (targetId) {
+    if (selectedIdSet.value.has(targetId) && selectedItemIds.value.length > 1) {
+      return [...selectedItemIds.value];
+    }
+    return [targetId];
+  }
+  return [...selectedItemIds.value];
+};
+
+const resolveDownloadFileName = (itemIds: string[]) => {
+  if (itemIds.length !== 1) {
+    return '文件柜批量下载.zip';
+  }
+  const item = getItemById(itemIds[0]);
+  if (!item) {
+    return '文件柜批量下载.zip';
+  }
+  return item.type === 'file' ? item.name : `${item.name}.zip`;
+};
+
+const handleDownload = async () => {
+  const itemIds = resolveDownloadItemIds();
+  if (!itemIds.length) {
+    hideContextMenu();
+    message.warning('请先选择要下载的文件或文件夹');
+    return;
+  }
+  hideContextMenu();
+  try {
+    await downloadCabinetItems(itemIds, resolveDownloadFileName(itemIds));
+  } catch (error) {
+    message.error('下载失败');
+  }
 };
 
 const handleRename = () => {

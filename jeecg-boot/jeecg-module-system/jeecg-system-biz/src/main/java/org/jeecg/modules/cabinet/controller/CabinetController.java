@@ -2,6 +2,7 @@ package org.jeecg.modules.cabinet.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
@@ -105,5 +106,11 @@ public class CabinetController {
     public Result<String> delete(@RequestParam("ids") String ids) {
         cabinetService.deleteItems(ids);
         return Result.OK("删除成功");
+    }
+
+    @Operation(summary = "文件柜-下载")
+    @GetMapping("/download")
+    public void download(@RequestParam("ids") String ids, HttpServletResponse response) {
+        cabinetService.downloadItems(ids, response);
     }
 }
