@@ -40,11 +40,11 @@
 
           <JEditor
             v-else-if="previewKind === 'html'"
-            :value="textContent"
-            :disabled="true"
+            :value="richTextContent"
             :autoFocus="false"
             :toolbar="false"
             :menubar="false"
+            :options="{ readonly: true }"
             :height="560"
           />
 
@@ -171,6 +171,25 @@ const displayCodeContent = computed(() => {
     return JSON.stringify(JSON.parse(textContent.value), null, 2);
   } catch (error) {
     return textContent.value;
+  }
+});
+
+const richTextContent = computed(() => {
+  if (previewKind.value !== 'html') {
+    return '';
+  }
+  const content = textContent.value;
+  if (!content.trim()) {
+    return '';
+  }
+  if (typeof DOMParser === 'undefined') {
+    return content;
+  }
+  try {
+    const documentNode = new DOMParser().parseFromString(content, 'text/html');
+    return documentNode.body?.innerHTML?.trim() || content;
+  } catch (error) {
+    return content;
   }
 });
 
