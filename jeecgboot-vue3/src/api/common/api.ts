@@ -139,6 +139,17 @@ export const downloadFile = (url, fileName?, parameter?) => {
       message.warning('文件下载失败');
       return;
     }
+    const contentType = String(data.type || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+      return data.text().then((text) => {
+        try {
+          const json = JSON.parse(text);
+          message.error(json?.message || '文件下载失败');
+        } catch (error) {
+          message.error(text || '文件下载失败');
+        }
+      });
+    }
     if (typeof window.navigator.msSaveBlob !== 'undefined') {
       window.navigator.msSaveBlob(new Blob([data]), fileName);
     } else {
