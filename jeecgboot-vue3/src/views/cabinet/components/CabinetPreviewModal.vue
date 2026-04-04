@@ -42,9 +42,7 @@
             v-else-if="previewKind === 'html'"
             :value="richTextContent"
             :autoFocus="false"
-            :toolbar="false"
-            :menubar="false"
-            :options="{ readonly: true }"
+            :options="{ readonly: true, toolbar: false, menubar: false }"
             :height="560"
           />
 
