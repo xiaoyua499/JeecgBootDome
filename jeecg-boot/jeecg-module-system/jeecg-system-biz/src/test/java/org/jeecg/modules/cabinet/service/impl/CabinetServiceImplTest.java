@@ -14,6 +14,7 @@ import org.jeecg.modules.cabinet.model.CabinetAccessContext;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
 import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
+import org.jeecg.modules.cabinet.vo.CabinetItemVO;
 import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
 import org.jeecg.modules.cabinet.service.ICabinetStorageService;
 import org.junit.jupiter.api.Test;
@@ -124,16 +125,22 @@ class CabinetServiceImplTest {
             new CabinetAccessContext(CabinetConstant.SCOPE_PUBLIC, CabinetConstant.OWNER_KEY_PUBLIC, CabinetConstant.SHARED_TENANT_ID, null, false)
         );
 
-        CabinetItem sharedFromAdminTenant = file("public-file", null, "共享制度.docx", "cabinet/file/shared.docx", 10);
-        sharedFromAdminTenant.setScope(CabinetConstant.SCOPE_PUBLIC);
-        sharedFromAdminTenant.setOwnerKey(CabinetConstant.OWNER_KEY_PUBLIC);
-        sharedFromAdminTenant.setTenantId(1000);
-        service.put(sharedFromAdminTenant);
+        CabinetItem sharedFolder = folder("public-folder", null, "共享资料", CabinetConstant.HAS_CHILD_NO, 10);
+        sharedFolder.setScope(CabinetConstant.SCOPE_PUBLIC);
+        sharedFolder.setOwnerKey(CabinetConstant.OWNER_KEY_PUBLIC);
+        sharedFolder.setTenantId(1000);
+        service.put(sharedFolder);
+
+        CabinetItem sharedFile = file("public-file", null, "共享制度.docx", "cabinet/file/shared.docx", 20);
+        sharedFile.setScope(CabinetConstant.SCOPE_PUBLIC);
+        sharedFile.setOwnerKey(CabinetConstant.OWNER_KEY_PUBLIC);
+        sharedFile.setTenantId(1000);
+        service.put(sharedFile);
 
         CabinetBootstrapVO bootstrap = service.bootstrap(CabinetConstant.SCOPE_PUBLIC);
 
         assertThat(bootstrap.getItems()).hasSize(1);
-        assertThat(bootstrap.getItems().get(0).getName()).isEqualTo("共享制度.docx");
+        assertThat(bootstrap.getItems().get(0).getName()).isEqualTo("共享资料");
     }
 
     @Test
@@ -165,6 +172,34 @@ class CabinetServiceImplTest {
         assertThat(view.getGroups().get(0).getItems()).extracting("name").containsExactly("文档");
         assertThat(view.getGroups().get(1).getTitle()).isEqualTo("文件");
         assertThat(view.getGroups().get(1).getItems()).extracting("name").containsExactly("A.txt", "B.txt");
+    }
+
+    @Test
+    void folderViewReturnsPaginatedItemsAndTotal() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(file("a", null, "A.txt", "cabinet/file/a.txt", 10));
+        service.put(file("b", null, "B.txt", "cabinet/file/b.txt", 20));
+        service.put(file("c", null, "C.txt", "cabinet/file/c.txt", 30));
+
+        CabinetFolderViewVO view = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "name", "asc", "none", null, 2L, 2L));
+
+        assertThat(view.getTotal()).isEqualTo(3);
+        assertThat(view.getPageNo()).isEqualTo(2);
+        assertThat(view.getPageSize()).isEqualTo(2);
+        assertThat(view.getItems()).extracting("name").containsExactly("C.txt");
+    }
+
+    @Test
+    void folderViewFiltersByKeywordBeforePagination() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(file("a", null, "合同A.txt", "cabinet/file/a.txt", 10));
+        service.put(file("b", null, "方案B.txt", "cabinet/file/b.txt", 20));
+        service.put(file("c", null, "合同C.txt", "cabinet/file/c.txt", 30));
+
+        CabinetFolderViewVO view = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "name", "asc", "none", "合同", 1L, 10L));
+
+        assertThat(view.getTotal()).isEqualTo(2);
+        assertThat(view.getItems()).extracting("name").containsExactly("合同A.txt", "合同C.txt");
     }
 
     @Test
@@ -334,12 +369,28 @@ class CabinetServiceImplTest {
     }
 
     private static CabinetFolderViewQueryDTO folderView(String scope, String parentId, String sortField, String sortOrder, String groupField) {
+        return folderView(scope, parentId, sortField, sortOrder, groupField, null, 1L, 40L);
+    }
+
+    private static CabinetFolderViewQueryDTO folderView(
+        String scope,
+        String parentId,
+        String sortField,
+        String sortOrder,
+        String groupField,
+        String keyword,
+        Long pageNo,
+        Long pageSize
+    ) {
         CabinetFolderViewQueryDTO request = new CabinetFolderViewQueryDTO();
         request.setScope(scope);
         request.setParentId(parentId);
         request.setSortField(sortField);
         request.setSortOrder(sortOrder);
         request.setGroupField(groupField);
+        request.setKeyword(keyword);
+        request.setPageNo(pageNo);
+        request.setPageSize(pageSize);
         return request;
     }
 
@@ -476,6 +527,51 @@ class CabinetServiceImplTest {
                 .filter(item -> CabinetConstant.SCOPE_PUBLIC.equals(context.getScope()) || Objects.equals(item.getTenantId(), context.getTenantId()))
                 .sorted(defaultItemComparator())
                 .collect(Collectors.toList());
+        }
+
+        @Override
+        protected List<CabinetItem> listCabinetFolders(CabinetAccessContext context) {
+            return listCabinetItems(context).stream()
+                .filter(item -> CabinetConstant.ITEM_TYPE_FOLDER.equals(item.getItemType()))
+                .collect(Collectors.toList());
+        }
+
+        @Override
+        public CabinetFolderViewVO folderView(CabinetFolderViewQueryDTO request) {
+            CabinetAccessContext context = resolveAccessContext(request.getScope(), false);
+            String parentId = normalizeParentId(request.getParentId());
+            String keyword = trimToNull(request.getKeyword());
+            String sortField = normalizeSortField(request.getSortField());
+            String sortOrder = normalizeSortOrder(request.getSortOrder());
+            String groupField = normalizeGroupField(request.getGroupField());
+            long pageNo = normalizePageNo(request.getPageNo());
+            long pageSize = normalizePageSize(request.getPageSize());
+
+            List<CabinetItemVO> matchedItems = listCabinetItems(context).stream()
+                .filter(item -> sameParent(item.getParentId(), parentId))
+                .filter(item -> keyword == null || item.getName().contains(keyword) || item.getExt().contains(keyword))
+                .sorted(cabinetItemComparator(sortField, sortOrder))
+                .map(this::toItemVO)
+                .collect(Collectors.toList());
+
+            int fromIndex = (int) Math.min((pageNo - 1) * pageSize, matchedItems.size());
+            int toIndex = (int) Math.min(fromIndex + pageSize, matchedItems.size());
+            List<CabinetItemVO> pageItems = matchedItems.subList(fromIndex, toIndex);
+
+            CabinetFolderViewVO result = new CabinetFolderViewVO();
+            result.setScope(context.getScope());
+            result.setParentId(parentId);
+            result.setKeyword(keyword);
+            result.setSortField(sortField);
+            result.setSortOrder(sortOrder);
+            result.setGroupField(groupField);
+            result.setPageNo(pageNo);
+            result.setPageSize(pageSize);
+            result.setTotal(matchedItems.size());
+            result.setCanManage(context.isCanManage());
+            result.setItems(pageItems);
+            result.setGroups(buildGroupSections(pageItems, groupField));
+            return result;
         }
 
         @Override

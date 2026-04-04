@@ -110,7 +110,7 @@
     </div>
 
     <div class="cabinet-pagination">
-      <a-pagination
+      <Pagination
         :current="currentPage"
         :page-size="pageSize"
         :total="totalItems"
@@ -210,6 +210,7 @@
 import Draggable from 'vuedraggable';
 import { ref } from 'vue';
 import type { PropType } from 'vue';
+import { Pagination } from 'ant-design-vue';
 import type { BreadcrumbItem, CabinetItem, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
 import { resolveCabinetItemIconSrc, resolveTypeLabel } from '../utils';
 import FileItem from './FileItem.vue';

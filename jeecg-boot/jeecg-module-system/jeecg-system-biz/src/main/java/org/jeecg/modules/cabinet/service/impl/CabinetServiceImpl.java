@@ -77,7 +77,7 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
     @Override
     public CabinetBootstrapVO bootstrap(String scope) {
         CabinetAccessContext context = resolveAccessContext(scope, false);
-        List<CabinetItemVO> items = listCabinetItems(context).stream().map(this::toItemVO).collect(Collectors.toList());
+        List<CabinetItemVO> items = listCabinetFolders(context).stream().map(this::toItemVO).collect(Collectors.toList());
 
         CabinetBootstrapVO result = new CabinetBootstrapVO();
         result.setScope(context.getScope());
@@ -91,23 +91,31 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         CabinetAccessContext context = resolveAccessContext(request.getScope(), false);
         String parentId = normalizeParentId(request.getParentId());
         validateParent(parentId, context);
-
+        String keyword = trimToNull(request.getKeyword());
         String sortField = normalizeSortField(request.getSortField());
         String sortOrder = normalizeSortOrder(request.getSortOrder());
         String groupField = normalizeGroupField(request.getGroupField());
+        long pageNo = normalizePageNo(request.getPageNo());
+        long pageSize = normalizePageSize(request.getPageSize());
 
-        List<CabinetItemVO> currentFolderItems = listCabinetItems(context).stream()
-            .filter(item -> sameParent(item.getParentId(), parentId))
-            .sorted(cabinetItemComparator(sortField, sortOrder))
+        LambdaQueryWrapper<CabinetItem> queryWrapper = buildFolderViewQuery(context, parentId, keyword);
+        Page<CabinetItem> page = new Page<>(pageNo, pageSize, true);
+        applyFolderViewOrder(queryWrapper, sortField, sortOrder);
+        Page<CabinetItem> folderPage = page(page, queryWrapper);
+        List<CabinetItemVO> currentFolderItems = folderPage.getRecords().stream()
             .map(this::toItemVO)
             .collect(Collectors.toList());
 
         CabinetFolderViewVO result = new CabinetFolderViewVO();
         result.setScope(context.getScope());
         result.setParentId(parentId);
+        result.setKeyword(keyword);
         result.setSortField(sortField);
         result.setSortOrder(sortOrder);
         result.setGroupField(groupField);
+        result.setPageNo(pageNo);
+        result.setPageSize(pageSize);
+        result.setTotal(folderPage.getTotal());
         result.setCanManage(context.isCanManage());
         result.setItems(currentFolderItems);
         result.setGroups(buildGroupSections(currentFolderItems, groupField));
@@ -566,6 +574,62 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         LambdaQueryWrapper<CabinetItem> queryWrapper = buildCabinetQuery(context);
         queryWrapper.orderByAsc(CabinetItem::getSortNo).orderByAsc(CabinetItem::getCreateTime);
         return list(queryWrapper);
+    }
+
+    protected List<CabinetItem> listCabinetFolders(CabinetAccessContext context) {
+        LambdaQueryWrapper<CabinetItem> queryWrapper = buildCabinetQuery(context)
+            .eq(CabinetItem::getItemType, CabinetConstant.ITEM_TYPE_FOLDER)
+            .orderByAsc(CabinetItem::getSortNo)
+            .orderByAsc(CabinetItem::getCreateTime);
+        return list(queryWrapper);
+    }
+
+    protected LambdaQueryWrapper<CabinetItem> buildFolderViewQuery(CabinetAccessContext context, String parentId, String keyword) {
+        LambdaQueryWrapper<CabinetItem> queryWrapper = buildCabinetQuery(context);
+        if (parentId == null) {
+            queryWrapper.isNull(CabinetItem::getParentId);
+        } else {
+            queryWrapper.eq(CabinetItem::getParentId, parentId);
+        }
+        if (keyword != null) {
+            queryWrapper.and(wrapper -> wrapper
+                .like(CabinetItem::getName, keyword)
+                .or()
+                .like(CabinetItem::getExt, keyword));
+        }
+        return queryWrapper;
+    }
+
+    protected void applyFolderViewOrder(LambdaQueryWrapper<CabinetItem> queryWrapper, String sortField, String sortOrder) {
+        boolean asc = !"desc".equals(sortOrder);
+        switch (sortField) {
+            case "manual":
+                queryWrapper.orderBy(true, asc, CabinetItem::getSortNo)
+                    .orderByAsc(CabinetItem::getName)
+                    .orderByAsc(CabinetItem::getId);
+                return;
+            case "name":
+                queryWrapper.orderBy(true, asc, CabinetItem::getName)
+                    .orderByAsc(CabinetItem::getId);
+                return;
+            case "updateTime":
+                queryWrapper.orderBy(true, asc, CabinetItem::getUpdateTime)
+                    .orderByAsc(CabinetItem::getName)
+                    .orderByAsc(CabinetItem::getId);
+                return;
+            case "ext":
+                queryWrapper.orderBy(true, asc, CabinetItem::getExt)
+                    .orderByAsc(CabinetItem::getName)
+                    .orderByAsc(CabinetItem::getId);
+                return;
+            case "size":
+                queryWrapper.orderBy(true, asc, CabinetItem::getSizeBytes)
+                    .orderByAsc(CabinetItem::getName)
+                    .orderByAsc(CabinetItem::getId);
+                return;
+            default:
+                throw new JeecgBootException("不支持的排序字段: " + sortField);
+        }
     }
 
     protected CabinetItem buildBaseItem(CabinetAccessContext context, String parentId, String itemType, String name) {
@@ -1141,6 +1205,17 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             throw new JeecgBootException("不支持的图标大小: " + gridIconSize);
         }
         return normalized;
+    }
+
+    protected long normalizePageNo(Long pageNo) {
+        return pageNo == null || pageNo < 1 ? 1L : pageNo;
+    }
+
+    protected long normalizePageSize(Long pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return 40L;
+        }
+        return Math.min(pageSize, 200L);
     }
 
     protected Comparator<String> nullSafeCollator() {

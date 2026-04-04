@@ -12,9 +12,15 @@ public class CabinetFolderViewQueryDTO {
 
     private String parentId;
 
+    private String keyword;
+
     private String sortField;
 
     private String sortOrder;
 
     private String groupField;
+
+    private Long pageNo;
+
+    private Long pageSize;
 }

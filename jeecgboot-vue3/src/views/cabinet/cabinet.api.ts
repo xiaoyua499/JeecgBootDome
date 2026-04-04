@@ -54,9 +54,13 @@ export interface CabinetFolderViewGroupDTO {
 export interface CabinetFolderViewDTO {
   scope: CabinetScope;
   parentId: string | null;
+  keyword?: string;
   sortField: SortField;
   sortOrder: SortOrder;
   groupField: GroupField;
+  pageNo: number;
+  pageSize: number;
+  total: number;
   canManage: boolean;
   items: CabinetBootstrapItemDTO[];
   groups: CabinetFolderViewGroupDTO[];
@@ -118,9 +122,12 @@ interface CabinetUpdateIconPayload {
 }
 
 interface CabinetFolderViewPayload extends CabinetScopedParentPayload {
+  keyword?: string;
   sortField: SortField;
   sortOrder: SortOrder;
   groupField: GroupField;
+  pageNo: number;
+  pageSize: number;
 }
 
 interface CabinetUpdateOrderPayload {
@@ -136,9 +143,10 @@ const normalizeParentId = (parentId: string | null) => parentId ?? 'root';
 export const bootstrapCabinet = (scope: CabinetScope) =>
   defHttp.get<CabinetBootstrapDTO>({ url: Api.bootstrap, params: { scope } });
 
-export const fetchCabinetFolderView = (payload: CabinetFolderViewPayload) =>
+export const fetchCabinetFolderView = (payload: CabinetFolderViewPayload, options?: CabinetRequestOptions) =>
   defHttp.get<CabinetFolderViewDTO>({
     url: Api.folderView,
+    signal: options?.signal,
     params: {
       ...payload,
       parentId: normalizeParentId(payload.parentId),

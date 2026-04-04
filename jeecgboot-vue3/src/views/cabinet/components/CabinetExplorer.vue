@@ -14,8 +14,8 @@
     <div class="cabinet-main">
       <CabinetTreePanel :tree-data="treeData" :selected-keys="selectedTreeKeys" @select="handleTreeSelect" />
 
-      <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
-        :grouped-sections="pagedGroupedSections" :sorted-filtered-folder-items="pagedSortedFilteredFolderItems"
+    <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
+        :grouped-sections="groupedSections" :sorted-filtered-folder-items="sortedFilteredFolderItems"
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
         :selection-box="selectionBox" :context-menu="contextMenu" :context-menu-target-item="contextMenuTargetItem"
         :can-paste-to-current-folder="canPasteToCurrentFolder" :can-paste-to-item-target="canPasteToItemTarget"
@@ -97,7 +97,8 @@ const props = withDefaults(defineProps<Props>(), {
   scope: 'private',
 });
 
-const itemList = ref<CabinetItem[]>(adaptCabinetBootstrap({ scope: props.scope, canManage: props.canManage, items: [] }, props.cabinetName));
+const treeItemList = ref<CabinetItem[]>(adaptCabinetBootstrap({ scope: props.scope, canManage: props.canManage, items: [] }, props.cabinetName));
+const currentFolderPageItems = ref<CabinetItem[]>([]);
 const viewMode = ref<ViewMode>('grid');
 const gridIconSize = ref<GridIconSize>('large');
 const searchKeyword = ref('');
@@ -106,7 +107,8 @@ const sortOrder = ref<SortOrder>('asc');
 const groupField = ref<GroupField>('none');
 const currentFolderId = ref(CABINET_ROOT_ID);
 const currentPage = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(40);
+const totalItems = ref(0);
 const selectedTreeKeys = ref<string[]>([CABINET_ROOT_ID]);
 const filePanelRef = ref<HTMLElement | null>(null);
 const gridPanelRef = ref<HTMLElement | null>(null);
@@ -120,6 +122,14 @@ const renamingItemId = ref('');
 const renamingValue = ref('');
 const clipboardState = ref<ClipboardState | null>(null);
 const canManageState = ref<boolean>(props.canManage);
+const folderViewAbortController = ref<AbortController | null>(null);
+const folderViewRequestSeq = ref(0);
+const itemList = computed<CabinetItem[]>(() => {
+  const itemMap = new Map<string, CabinetItem>();
+  treeItemList.value.forEach((item) => itemMap.set(item.id, item));
+  currentFolderPageItems.value.forEach((item) => itemMap.set(item.id, item));
+  return Array.from(itemMap.values());
+});
 const canManageRef = computed(() => canManageState.value);
 const canCustomizeIcons = computed(() => props.scope === 'private' && canManageRef.value);
 const contextMenuTargetId = computed(() => contextMenu.value.targetId);
@@ -186,18 +196,8 @@ const applyViewPreference = (preference: CabinetViewPreferenceState) => {
   groupField.value = preference.groupField;
 };
 
-const mergeFolderViewItems = (items: Parameters<typeof adaptCabinetItem>[0][]) => {
-  if (!items.length) {
-    return;
-  }
-  const nextItemMap = new Map(items.map((item) => {
-    const adapted = adaptCabinetItem(item);
-    return [adapted.id, adapted] as const;
-  }));
-  itemList.value = itemList.value.map((item) => {
-    const nextItem = nextItemMap.get(item.id);
-    return nextItem ? { ...item, ...nextItem } : item;
-  });
+const replaceCurrentFolderPageItems = (items: Parameters<typeof adaptCabinetItem>[0][]) => {
+  currentFolderPageItems.value = items.map(adaptCabinetItem);
 };
 
 const loadViewPreference = async () => {
@@ -223,21 +223,47 @@ const persistViewPreference = async () => {
 };
 
 const syncFolderView = async (options?: { showError?: boolean }) => {
+  const requestSeq = folderViewRequestSeq.value + 1;
+  folderViewRequestSeq.value = requestSeq;
+  folderViewAbortController.value?.abort();
+  const controller = new AbortController();
+  folderViewAbortController.value = controller;
   try {
     const result = await fetchCabinetFolderView({
       scope: props.scope,
       parentId: resolveApiParentId(currentFolderId.value),
+      keyword: searchKeyword.value.trim() || undefined,
       sortField: sortField.value,
       sortOrder: sortOrder.value,
       groupField: groupField.value,
-    });
-    mergeFolderViewItems(result.items);
+      pageNo: currentPage.value,
+      pageSize: pageSize.value,
+    }, { signal: controller.signal });
+    if (requestSeq !== folderViewRequestSeq.value) {
+      return;
+    }
+    replaceCurrentFolderPageItems(result.items);
+    totalItems.value = result.total;
+    currentPage.value = result.pageNo;
+    pageSize.value = result.pageSize;
     canManageState.value = result.canManage;
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
+    if (result.total > 0 && result.pageNo > totalPages) {
+      currentPage.value = totalPages;
+      await syncFolderView(options);
+    }
   } catch (error) {
+    if (controller.signal.aborted) {
+      return;
+    }
     if (options?.showError) {
-      message.error('排序/分组视图加载失败');
+      message.error('文件列表加载失败');
     }
     throw error;
+  } finally {
+    if (folderViewAbortController.value === controller) {
+      folderViewAbortController.value = null;
+    }
   }
 };
 
@@ -286,32 +312,33 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
     const activePropertyItemId = propertyItem.value?.id || '';
     const activePreviewItemId = previewItem.value?.id || '';
     const result = await bootstrapCabinet(props.scope);
-    const nextItemList = adaptCabinetBootstrap(result, props.cabinetName);
-    itemList.value = nextItemList;
+    const nextTreeItemList = adaptCabinetBootstrap(result, props.cabinetName);
+    treeItemList.value = nextTreeItemList;
+    currentFolderPageItems.value = [];
     canManageState.value = result.canManage;
 
-    const targetFolderExists = nextItemList.some((item) => item.type === 'folder' && item.id === previousFolderId);
+    const targetFolderExists = nextTreeItemList.some((item) => item.type === 'folder' && item.id === previousFolderId);
     currentFolderId.value = targetFolderExists ? previousFolderId : CABINET_ROOT_ID;
     selectedTreeKeys.value = [currentFolderId.value];
 
+    cancelRename();
+    hideContextMenu();
+    clearSelection();
+    await syncFolderView();
+
     if (activePropertyItemId) {
-      propertyItem.value = nextItemList.find((item) => item.id === activePropertyItemId) || null;
+      propertyItem.value = itemList.value.find((item) => item.id === activePropertyItemId) || null;
       if (!propertyItem.value) {
         propertyModalVisible.value = false;
       }
     }
 
     if (activePreviewItemId) {
-      previewItem.value = nextItemList.find((item) => item.id === activePreviewItemId) || null;
+      previewItem.value = itemList.value.find((item) => item.id === activePreviewItemId) || null;
       if (!previewItem.value) {
         previewModalVisible.value = false;
       }
     }
-
-    cancelRename();
-    hideContextMenu();
-    clearSelection();
-    await syncFolderView();
 
     if (!options?.silent) {
       message.success('已刷新');
@@ -337,8 +364,8 @@ const {
   groupFieldLabel,
 } = useCabinetComputed({
   itemList,
+  currentFolderItems: currentFolderPageItems,
   currentFolderId,
-  searchKeyword,
   sortField,
   sortOrder,
   groupField,
@@ -346,25 +373,7 @@ const {
   clipboardState,
   canManage: canManageRef,
 });
-
-const totalItems = computed(() => sortedFilteredFolderItems.value.length);
-const pagedSortedFilteredFolderItems = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return sortedFilteredFolderItems.value.slice(start, start + pageSize.value);
-});
-const pagedGroupedSections = computed(() => {
-  if (groupField.value === 'none') {
-    return [{ key: 'all', title: '', items: pagedSortedFilteredFolderItems.value }];
-  }
-  const pagedIdSet = new Set(pagedSortedFilteredFolderItems.value.map((item) => item.id));
-  return groupedSections.value
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => pagedIdSet.has(item.id)),
-    }))
-    .filter((group) => group.items.length > 0);
-});
-const currentVisibleItemIds = computed(() => pagedSortedFilteredFolderItems.value.map((item) => item.id));
+const currentVisibleItemIds = computed(() => sortedFilteredFolderItems.value.map((item) => item.id));
 
 // 选择相关交互：单选、多选、框选、快捷键全选等。
 const {
@@ -458,7 +467,13 @@ const appendOptimisticItem = (createdItem: Parameters<typeof adaptCabinetItem>[0
   if (itemList.value.some((item) => item.id === nextItem.id)) {
     return nextItem;
   }
-  itemList.value.push(nextItem);
+  if (nextItem.type === 'folder') {
+    treeItemList.value = [...treeItemList.value, nextItem];
+  }
+  if (nextItem.parentId === currentFolderId.value) {
+    currentFolderPageItems.value = [...currentFolderPageItems.value, nextItem];
+    totalItems.value += 1;
+  }
   return nextItem;
 };
 
@@ -613,11 +628,12 @@ const enterFolderById = (folderId: string) => {
   }
   cancelRename();
   currentFolderId.value = folderId;
+  currentPage.value = 1;
   searchKeyword.value = '';
   selectedTreeKeys.value = [folderId];
   clearSelection();
   hideContextMenu();
-  void syncFolderView();
+  void syncFolderView({ showError: true });
 };
 
 const handleTreeSelect = (keys: Array<string | number>) => {
@@ -653,17 +669,21 @@ const handleSearch = () => {
   currentPage.value = 1;
   hideContextMenu();
   clearSelection();
+  void syncFolderView({ showError: true });
 };
 
 const handleSortFieldChange = (field: SortField) => {
+  currentPage.value = 1;
   void savePreferenceAndSyncFolderView({ sortField: field }, { showError: true });
 };
 
 const handleSortOrderChange = (order: SortOrder) => {
+  currentPage.value = 1;
   void savePreferenceAndSyncFolderView({ sortOrder: order }, { showError: true });
 };
 
 const handleGroupFieldChange = (field: GroupField) => {
+  currentPage.value = 1;
   void savePreferenceAndSyncFolderView({ groupField: field }, { showError: true });
 };
 
@@ -688,8 +708,8 @@ const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) =>
     }
   });
   if (groupField.value !== 'none') {
-    const otherItems = itemList.value
-      .filter((item) => item.parentId === currentFolderId.value && group.items.every((groupItem) => groupItem.id !== item.id))
+    const otherItems = currentFolderPageItems.value
+      .filter((item) => group.items.every((groupItem) => groupItem.id !== item.id))
       .sort((left, right) => left.orderNo - right.orderNo);
     otherItems.forEach((item, index) => {
       const currentItem = getItemById(item.id);
@@ -700,8 +720,7 @@ const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) =>
   }
   void (async () => {
     try {
-      const currentFolderItems = itemList.value
-        .filter((item) => item.parentId === currentFolderId.value)
+      const currentFolderItems = currentFolderPageItems.value
         .sort((left, right) => left.orderNo - right.orderNo);
       await updateCabinetItemOrder({
         parentId: resolveApiParentId(currentFolderId.value),
@@ -898,9 +917,11 @@ const handlePageChange = (page: number, size?: number) => {
   currentPage.value = page;
   if (size && size !== pageSize.value) {
     pageSize.value = size;
+    currentPage.value = 1;
   }
   hideContextMenu();
   clearSelection();
+  void syncFolderView({ showError: true });
 };
 
 // 默认名统一基于当前目录全部同级名称生成，避免文件与文件夹重名。
@@ -997,17 +1018,6 @@ const buildTableRowClass = (record: CabinetItem) =>
 const handleGlobalClick = () => {
   hideContextMenu();
 };
-
-watch([currentFolderId, searchKeyword, sortField, sortOrder, groupField], () => {
-  currentPage.value = 1;
-});
-
-watch([totalItems, pageSize], () => {
-  const totalPages = Math.max(1, Math.ceil(totalItems.value / pageSize.value));
-  if (currentPage.value > totalPages) {
-    currentPage.value = totalPages;
-  }
-});
 
 onMounted(() => {
   void initializeCabinet();

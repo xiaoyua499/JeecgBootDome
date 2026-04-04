@@ -1,11 +1,11 @@
 import { computed, type Ref } from 'vue';
 import type { ClipboardState, GroupField, SortField, SortOrder, CabinetItem } from '../types';
-import { buildBreadcrumbItems, buildGroupedSections, buildTreeData, sortCabinetItems } from '../utils';
+import { buildBreadcrumbItems, buildGroupedSections, buildTreeData } from '../utils';
 
 export function useCabinetComputed(params: {
   itemList: Ref<CabinetItem[]>;
+  currentFolderItems: Ref<CabinetItem[]>;
   currentFolderId: Ref<string>;
-  searchKeyword: Ref<string>;
   sortField: Ref<SortField>;
   sortOrder: Ref<SortOrder>;
   groupField: Ref<GroupField>;
@@ -23,22 +23,11 @@ export function useCabinetComputed(params: {
     return map;
   });
 
-  const currentFolderItems = computed(() => params.itemList.value.filter((item) => item.parentId === params.currentFolderId.value));
-
-  const filteredFolderItems = computed(() => {
-    const keyword = params.searchKeyword.value.trim().toLowerCase();
-    if (!keyword) {
-      return currentFolderItems.value;
-    }
-    return currentFolderItems.value.filter((item) => item.name.toLowerCase().includes(keyword) || item.ext.toLowerCase().includes(keyword));
-  });
-
-  const sortedFilteredFolderItems = computed(() => sortCabinetItems(filteredFolderItems.value, params.sortField.value, params.sortOrder.value));
-
-  const groupedSections = computed(() => buildGroupedSections(sortedFilteredFolderItems.value, params.groupField.value));
+  const sortedFilteredFolderItems = computed(() => params.currentFolderItems.value);
+  const groupedSections = computed(() => buildGroupedSections(params.currentFolderItems.value, params.groupField.value));
   const breadcrumbItems = computed(() => buildBreadcrumbItems(folderMap.value, params.currentFolderId.value));
   const treeData = computed(() => buildTreeData(params.itemList.value));
-  const currentVisibleItemIds = computed(() => sortedFilteredFolderItems.value.map((item) => item.id));
+  const currentVisibleItemIds = computed(() => params.currentFolderItems.value.map((item) => item.id));
   const clipboardCutIdSet = computed(() => new Set(params.clipboardState.value?.mode === 'cut' ? params.clipboardState.value.itemIds : []));
   const canPasteToCurrentFolder = computed(() => params.canManage.value && Boolean(params.clipboardState.value?.itemIds.length));
   const canPasteToItemTarget = computed(() => {
@@ -57,8 +46,6 @@ export function useCabinetComputed(params: {
 
   return {
     folderMap,
-    currentFolderItems,
-    filteredFolderItems,
     sortedFilteredFolderItems,
     groupedSections,
     breadcrumbItems,
