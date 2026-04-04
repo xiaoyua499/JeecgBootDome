@@ -14,6 +14,9 @@ interface UseCabinetClipboardParams {
   hideContextMenu: () => void;
   clearSelection: () => void;
   cancelRename: () => void;
+  onMoveItems?: (itemIds: string[], targetFolderId: string) => Promise<void> | void;
+  onCopyItems?: (itemIds: string[], targetFolderId: string) => Promise<void> | void;
+  onDeleteItems?: (itemIds: string[]) => Promise<void> | void;
 }
 
 export function useCabinetClipboard(params: UseCabinetClipboardParams) {
@@ -93,7 +96,7 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
     return normalizeItemIds(sourceIds);
   };
 
-  const moveItemsToFolder = (sourceIds: string[], targetFolderId: string, successMessage = '已移动到目标文件夹') => {
+  const moveItemsToFolderLocal = (sourceIds: string[], targetFolderId: string, successMessage = '已移动到目标文件夹') => {
     if (!params.canManage.value) {
       return false;
     }
@@ -141,7 +144,7 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
     return true;
   };
 
-  const applyClipboardToFolder = (targetFolderId: string) => {
+  const applyClipboardToFolder = async (targetFolderId: string) => {
     if (!params.canManage.value || !params.clipboardState.value?.itemIds.length) {
       return;
     }
@@ -166,6 +169,15 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
     const siblingNames = siblings.map((item) => item.name);
 
     if (clipboard.mode === 'copy') {
+      if (params.onCopyItems) {
+        try {
+          await params.onCopyItems(clipboard.itemIds, targetFolderId);
+          message.success('已复制到当前目录');
+          params.hideContextMenu();
+        } catch (error) {}
+        return;
+      }
+
       const clonedItems: CabinetItem[] = [];
       sourceItems.forEach((item) => {
         const nextCloned = cloneItemTree(item.id, targetFolderId, siblingNames);
@@ -183,28 +195,45 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
         .map((item) => item.id)
         .slice(0, sourceItems.length);
       message.success('已复制到当前目录');
-    } else {
-      const sourceParentIds = new Set<string | null>(sourceItems.map((item) => item.parentId));
-      sourceItems.forEach((item) => {
-        if (item.parentId === targetFolderId) {
-          item.orderNo = nextOrderNo;
-          nextOrderNo += 10;
-          return;
-        }
-        item.parentId = targetFolderId;
-        item.orderNo = nextOrderNo;
-        item.updateTime = formatNow();
-        item.name = buildSiblingName(item.name, siblingNames);
-        siblingNames.push(item.name);
-        nextOrderNo += 10;
-      });
-      const affectedParentIds = new Set<string | null>(sourceParentIds);
-      affectedParentIds.add(targetFolderId);
-      affectedParentIds.forEach((parentId) => reassignSiblingOrder(params.itemList.value, parentId));
-      params.selectedItemIds.value = sourceItems.map((item) => item.id);
-      resetClipboard();
-      message.success('已移动到当前目录');
+      params.hideContextMenu();
+      return;
     }
+
+    if (params.onMoveItems) {
+      const movableIds = sourceItems.filter((item) => item.parentId !== targetFolderId).map((item) => item.id);
+      if (!movableIds.length) {
+        params.hideContextMenu();
+        return;
+      }
+      try {
+        await params.onMoveItems(movableIds, targetFolderId);
+        resetClipboard();
+        message.success('已移动到当前目录');
+        params.hideContextMenu();
+      } catch (error) {}
+      return;
+    }
+
+    const sourceParentIds = new Set<string | null>(sourceItems.map((item) => item.parentId));
+    sourceItems.forEach((item) => {
+      if (item.parentId === targetFolderId) {
+        item.orderNo = nextOrderNo;
+        nextOrderNo += 10;
+        return;
+      }
+      item.parentId = targetFolderId;
+      item.orderNo = nextOrderNo;
+      item.updateTime = formatNow();
+      item.name = buildSiblingName(item.name, siblingNames);
+      siblingNames.push(item.name);
+      nextOrderNo += 10;
+    });
+    const affectedParentIds = new Set<string | null>(sourceParentIds);
+    affectedParentIds.add(targetFolderId);
+    affectedParentIds.forEach((parentId) => reassignSiblingOrder(params.itemList.value, parentId));
+    params.selectedItemIds.value = sourceItems.map((item) => item.id);
+    resetClipboard();
+    message.success('已移动到当前目录');
     params.hideContextMenu();
   };
 
@@ -235,7 +264,7 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
   };
 
   const handlePaste = () => {
-    applyClipboardToFolder(params.currentFolderId.value);
+    void applyClipboardToFolder(params.currentFolderId.value);
   };
 
   const handlePasteToItem = () => {
@@ -244,12 +273,10 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
       params.hideContextMenu();
       return;
     }
-    applyClipboardToFolder(target.id);
+    void applyClipboardToFolder(target.id);
   };
 
-  const collectDeleteIds = (targetId: string): string[] => [targetId, ...getDescendantIds(params.itemList.value, targetId)];
-
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!params.canManage.value) {
       params.hideContextMenu();
       return;
@@ -259,9 +286,26 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
       params.hideContextMenu();
       return;
     }
+
+    if (params.onDeleteItems) {
+      try {
+        await params.onDeleteItems(targetIds);
+        if (params.clipboardState.value?.itemIds.some((itemId) => targetIds.includes(itemId))) {
+          resetClipboard();
+        }
+        if (params.renamingItemId.value && targetIds.includes(params.renamingItemId.value)) {
+          params.cancelRename();
+        }
+        params.clearSelection();
+        params.hideContextMenu();
+        message.success('已删除');
+      } catch (error) {}
+      return;
+    }
+
     const removeIdSet = new Set<string>();
     targetIds.forEach((id) => {
-      collectDeleteIds(id).forEach((removeId) => removeIdSet.add(removeId));
+      [id, ...getDescendantIds(params.itemList.value, id)].forEach((removeId) => removeIdSet.add(removeId));
     });
     params.itemList.value = params.itemList.value.filter((item) => !removeIdSet.has(item.id));
     if (params.clipboardState.value?.itemIds.some((itemId) => removeIdSet.has(itemId))) {
@@ -281,7 +325,7 @@ export function useCabinetClipboard(params: UseCabinetClipboardParams) {
     canPasteToCurrentFolder,
     canPasteToItemTarget,
     getItemById,
-    moveItemsToFolder,
+    moveItemsToFolder: moveItemsToFolderLocal,
     resetClipboard,
     handleCopy,
     handleCut,

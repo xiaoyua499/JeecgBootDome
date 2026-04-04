@@ -1,4 +1,5 @@
 export type ItemType = 'folder' | 'file';
+export type CabinetScope = 'private' | 'public';
 export type ViewMode = 'grid' | 'table';
 export type GridIconSize = 'large' | 'small';
 export type SortField = 'manual' | 'name' | 'updateTime' | 'ext' | 'size';
@@ -9,6 +10,7 @@ export type ClipboardMode = 'copy' | 'cut';
 export interface CabinetExplorerProps {
   cabinetName?: string;
   canManage?: boolean;
+  scope?: CabinetScope;
 }
 
 export interface CabinetItem {
@@ -23,6 +25,11 @@ export interface CabinetItem {
   ext: string;
   orderNo: number;
   parentId: string | null;
+  scope?: CabinetScope;
+  filePath?: string;
+  sizeBytes?: number;
+  customIconPath?: string;
+  hasChild?: string;
 }
 
 export interface BreadcrumbItem {

@@ -1,7 +1,7 @@
 <!-- 文件柜主容器：负责页面状态、业务编排，以及连接工具栏、目录树和文件区子组件。 -->
 <template>
   <div class="cabinet-explorer">
-    <CabinetToolbar ref="cabinetToolbarRef" :can-manage="props.canManage" :selected-count="selectedItemIds.length"
+    <CabinetToolbar ref="cabinetToolbarRef" :can-manage="canManageRef" :selected-count="selectedItemIds.length"
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
@@ -14,7 +14,7 @@
     <div class="cabinet-main">
       <CabinetTreePanel :tree-data="treeData" :selected-keys="selectedTreeKeys" @select="handleTreeSelect" />
 
-      <CabinetFilePanel :can-manage="props.canManage" :breadcrumb-items="breadcrumbItems"
+      <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
         :grouped-sections="groupedSections" :sorted-filtered-folder-items="sortedFilteredFolderItems"
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
         :selection-box="selectionBox" :context-menu="contextMenu"
@@ -47,14 +47,25 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { message } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
-import { createMockCabinetItems } from '../mockData';
+import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
+import { adaptCabinetBootstrap, CABINET_ROOT_ID } from '../adapter';
+import {
+  bootstrapCabinet,
+  copyCabinetItems,
+  createCabinetFile,
+  createCabinetFolder,
+  deleteCabinetItems,
+  moveCabinetItems,
+  renameCabinetItem,
+  updateCabinetIcon,
+} from '../cabinet.api';
 import { useCabinetClipboard } from '../composables/useCabinetClipboard';
 import { useCabinetComputed } from '../composables/useCabinetComputed';
 import { useCabinetSelection } from '../composables/useCabinetSelection';
 import { useCabinetUpload } from '../composables/useCabinetUpload';
 import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
-import type { CabinetItem, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
-import { buildIndexedSiblingName, formatNow, generateItemId, resolveCabinetFileExt } from '../utils';
+import type { CabinetItem, CabinetScope, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
+import { buildIndexedSiblingName, resolveCabinetFileExt } from '../utils';
 import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
 import CabinetCustomizeIconModal from './CabinetCustomizeIconModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
@@ -66,22 +77,24 @@ import CabinetUploadProgressModal from './CabinetUploadProgressModal.vue';
 interface Props {
   cabinetName?: string;
   canManage?: boolean;
+  scope?: CabinetScope;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   cabinetName: '私柜',
   canManage: true,
+  scope: 'private',
 });
 
-const itemList = ref<CabinetItem[]>(createMockCabinetItems(props.cabinetName));
+const itemList = ref<CabinetItem[]>(adaptCabinetBootstrap({ scope: props.scope, canManage: props.canManage, items: [] }, props.cabinetName));
 const viewMode = ref<ViewMode>('grid');
 const gridIconSize = ref<GridIconSize>('large');
 const searchKeyword = ref('');
 const sortField = ref<SortField>('manual');
 const sortOrder = ref<SortOrder>('asc');
 const groupField = ref<GroupField>('type');
-const currentFolderId = ref('root');
-const selectedTreeKeys = ref<string[]>(['root']);
+const currentFolderId = ref(CABINET_ROOT_ID);
+const selectedTreeKeys = ref<string[]>([CABINET_ROOT_ID]);
 const filePanelRef = ref<HTMLElement | null>(null);
 const gridPanelRef = ref<HTMLElement | null>(null);
 const cabinetToolbarRef = ref<InstanceType<typeof CabinetToolbar> | null>(null);
@@ -91,8 +104,9 @@ const propertyItem = ref<CabinetItem | null>(null);
 const renamingItemId = ref('');
 const renamingValue = ref('');
 const clipboardState = ref<ClipboardState | null>(null);
-const canManageRef = computed(() => props.canManage);
-const canCustomizeIcons = computed(() => props.cabinetName === '私柜');
+const canManageState = ref<boolean>(props.canManage);
+const canManageRef = computed(() => canManageState.value);
+const canCustomizeIcons = computed(() => props.scope === 'private' && canManageRef.value);
 const contextMenuTargetId = computed(() => contextMenu.value.targetId);
 
 const contextMenu = ref({
@@ -128,6 +142,38 @@ const hideContextMenu = () => {
 const cancelRename = () => {
   renamingItemId.value = '';
   renamingValue.value = '';
+};
+
+const resolveApiParentId = (folderId: string) => (folderId === CABINET_ROOT_ID ? null : folderId);
+
+const reloadBootstrap = async (options?: { silent?: boolean }) => {
+  try {
+    const previousFolderId = currentFolderId.value;
+    const activePropertyItemId = propertyItem.value?.id || '';
+    const result = await bootstrapCabinet(props.scope);
+    const nextItemList = adaptCabinetBootstrap(result, props.cabinetName);
+    itemList.value = nextItemList;
+    canManageState.value = result.canManage;
+
+    const targetFolderExists = nextItemList.some((item) => item.type === 'folder' && item.id === previousFolderId);
+    currentFolderId.value = targetFolderExists ? previousFolderId : CABINET_ROOT_ID;
+    selectedTreeKeys.value = [currentFolderId.value];
+
+    if (activePropertyItemId) {
+      propertyItem.value = nextItemList.find((item) => item.id === activePropertyItemId) || null;
+      if (!propertyItem.value) {
+        propertyModalVisible.value = false;
+      }
+    }
+
+    cancelRename();
+    hideContextMenu();
+    clearSelection();
+
+    if (!options?.silent) {
+      message.success('已刷新');
+    }
+  } catch (error) {}
 };
 
 const {
@@ -202,6 +248,18 @@ const {
   hideContextMenu,
   clearSelection,
   cancelRename,
+  onMoveItems: async (itemIds, targetFolderId) => {
+    await moveCabinetItems({ itemIds, targetParentId: resolveApiParentId(targetFolderId) });
+    await reloadBootstrap({ silent: true });
+  },
+  onCopyItems: async (itemIds, targetFolderId) => {
+    await copyCabinetItems({ itemIds, targetParentId: resolveApiParentId(targetFolderId) });
+    await reloadBootstrap({ silent: true });
+  },
+  onDeleteItems: async (itemIds) => {
+    await deleteCabinetItems(itemIds);
+    await reloadBootstrap({ silent: true });
+  },
 });
 
 const { ingestDataTransfer, ingestPlainFiles } = useCabinetUpload({
@@ -262,7 +320,7 @@ const startRename = (itemId: string) => {
   hideContextMenu();
 };
 
-const submitRename = () => {
+const submitRename = async () => {
   const targetId = renamingItemId.value;
   if (!targetId) {
     return;
@@ -278,9 +336,16 @@ const submitRename = () => {
     renamingValue.value = target.name;
     return;
   }
-  target.name = normalized;
-  cancelRename();
-  message.success('重命名成功');
+  if (normalized === target.name) {
+    cancelRename();
+    return;
+  }
+  try {
+    await renameCabinetItem({ id: targetId, name: normalized });
+    cancelRename();
+    await reloadBootstrap({ silent: true });
+    message.success('重命名成功');
+  } catch (error) {}
 };
 
 const enterFolderById = (folderId: string) => {
@@ -305,6 +370,10 @@ const handleTreeSelect = (keys: Array<string | number>) => {
 const handleOpen = (item: CabinetItem) => {
   if (item.type === 'folder') {
     enterFolderById(item.id);
+    return;
+  }
+  if (item.filePath) {
+    window.open(getFileAccessHttpUrl(item.filePath), '_blank');
     return;
   }
   message.info(`打开文件：${item.name}`);
@@ -391,7 +460,7 @@ const handleOpenMenuAction = () => {
 };
 
 const handleRename = () => {
-  if (!props.canManage) {
+  if (!canManageRef.value) {
     hideContextMenu();
     return;
   }
@@ -437,18 +506,27 @@ const handleCustomizeIcon = () => {
 };
 
 const handleCustomizeIconSuccess = ({ itemId, iconKey, customIcon }: { itemId: string; iconKey?: string; customIcon?: string }) => {
-  const target = getItemById(itemId);
-  if (!target) {
+  if (customIcon && customIcon.startsWith('data:')) {
+    const target = getItemById(itemId);
+    if (!target) {
+      return;
+    }
+    target.iconKey = iconKey;
+    target.customIcon = customIcon;
+    message.success('图标已更新，后续上传联调后可持久化保存');
     return;
   }
-  // 自定义上传和内置图标互斥保存，避免出现双重覆盖来源。
-  target.iconKey = iconKey;
-  target.customIcon = customIcon;
-  message.success('图标已更新');
+  void (async () => {
+    try {
+      await updateCabinetIcon({ id: itemId, iconKey, customIconPath: customIcon });
+      await reloadBootstrap({ silent: true });
+      message.success('图标已更新');
+    } catch (error) {}
+  })();
 };
 
 const handleUpload = () => {
-  if (!props.canManage) {
+  if (!canManageRef.value) {
     message.warning('当前页面无上传权限');
     hideContextMenu();
     return;
@@ -459,8 +537,6 @@ const handleUpload = () => {
 
 const handleUploadDrop = async (dataTransfer: DataTransfer) => {
   hideContextMenu();
-  // 纯文件拖拽改为复用上传任务队列，修复多文件拖拽时只处理一项的问题；
-  // 目录拖拽仍走递归解析逻辑，保留文件夹上传能力。
   const items = Array.from(dataTransfer.items || []);
   const hasDirectoryEntry = items.some((item) => item.webkitGetAsEntry?.()?.isDirectory);
   if (!hasDirectoryEntry && dataTransfer.files?.length) {
@@ -470,9 +546,8 @@ const handleUploadDrop = async (dataTransfer: DataTransfer) => {
   await ingestDataTransfer(dataTransfer);
 };
 
-const handleRefresh = () => {
-  message.success('已刷新');
-  hideContextMenu();
+const handleRefresh = async () => {
+  await reloadBootstrap();
 };
 
 // 默认名统一基于当前目录全部同级名称生成，避免文件与文件夹重名。
@@ -488,7 +563,7 @@ const buildCreateItemDefaultName = (type: ItemType) => {
 };
 
 const handleCreateItem = (type: ItemType) => {
-  if (!props.canManage) {
+  if (!canManageRef.value) {
     message.warning('当前页面无新建权限');
     hideContextMenu();
     return;
@@ -503,23 +578,25 @@ const handleCreateItem = (type: ItemType) => {
   });
 };
 
-const handleCreateItemSuccess = ({ type, name }: { type: ItemType; name: string }) => {
-  const now = formatNow();
-  const id = generateItemId(type);
-  // 新建结果在这里统一落库，保持工具栏、右键菜单等入口行为一致。
-  itemList.value.push({
-    id,
-    name,
-    type,
-    size: type === 'folder' ? '-' : '0 B',
-    createTime: now,
-    updateTime: now,
-    ext: type === 'folder' ? 'folder' : resolveCabinetFileExt(name),
-    orderNo: Date.now(),
-    parentId: currentFolderId.value,
-  });
-  selectSingleItem(id);
-  message.success(type === 'folder' ? '文件夹已创建' : '文件已创建');
+const handleCreateItemSuccess = async ({ type, name }: { type: ItemType; name: string }) => {
+  try {
+    const parentId = resolveApiParentId(currentFolderId.value);
+    const createdItem =
+      type === 'folder'
+        ? await createCabinetFolder({ scope: props.scope, parentId, name })
+        : await createCabinetFile({
+            scope: props.scope,
+            parentId,
+            name,
+            ext: resolveCabinetFileExt(name),
+            sizeBytes: 0,
+          });
+    await reloadBootstrap({ silent: true });
+    if (createdItem?.id) {
+      selectSingleItem(createdItem.id);
+    }
+    message.success(type === 'folder' ? '文件夹已创建' : '文件已创建');
+  } catch (error) {}
 };
 
 const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '') => {
@@ -565,6 +642,7 @@ const handleGlobalClick = () => {
 };
 
 onMounted(() => {
+  void reloadBootstrap({ silent: true });
   window.addEventListener('click', handleGlobalClick);
   window.addEventListener('keydown', handleGlobalKeydown);
 });

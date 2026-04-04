@@ -1,5 +1,5 @@
 <template>
-  <CabinetExplorer cabinet-name="公柜" :can-manage="false" />
+  <CabinetExplorer cabinet-name="公柜" scope="public" :can-manage="false" />
 </template>
 
 <script lang="ts" setup>
