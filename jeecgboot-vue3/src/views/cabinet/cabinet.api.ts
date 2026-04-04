@@ -1,5 +1,6 @@
 import { defHttp } from '/@/utils/http/axios';
 import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
+import { useGlobSetting } from '/@/hooks/setting';
 import { getHeaders } from '/@/utils/common/compUtils';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import type { CabinetScope, GridIconSize, GroupField, SortField, SortOrder, ViewMode } from './types';
@@ -138,6 +139,8 @@ interface CabinetUpdateOrderPayload {
 }
 
 const normalizeParentId = (parentId: string | null) => parentId ?? 'root';
+const globSetting = useGlobSetting();
+const cabinetDownloadUrl = `${globSetting.domainUrl}${Api.download}`;
 
 export const bootstrapCabinet = (scope: CabinetScope) =>
   defHttp.get<CabinetBootstrapDTO>({ url: Api.bootstrap, params: { scope } });
@@ -225,7 +228,7 @@ export const updateCabinetItemOrder = (payload: CabinetUpdateOrderPayload) =>
 
 export const downloadCabinetItems = async (itemIds: string[], fileName: string) => {
   const query = new URLSearchParams({ ids: itemIds.join(',') });
-  const response = await fetch(`${Api.download}?${query.toString()}`, {
+  const response = await fetch(`${cabinetDownloadUrl}?${query.toString()}`, {
     method: 'GET',
     headers: {
       ...getHeaders(),
