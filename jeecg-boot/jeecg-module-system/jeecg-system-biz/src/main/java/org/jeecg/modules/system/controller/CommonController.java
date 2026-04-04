@@ -216,6 +216,7 @@ public class CommonController {
             response.setContentType(contentType);
             response.setHeader("Content-Disposition", buildContentDisposition(file.getName(), shouldPreviewInline(contentType)));
             response.setHeader("Content-Length", String.valueOf(file.length()));
+            response.setHeader("X-Content-Type-Options", "nosniff");
             
             // 结合 StreamingResponseBody 的流式写法
             try (InputStream inputStream = new BufferedInputStream(new FileInputStream(file));
@@ -256,11 +257,8 @@ public class CommonController {
             return false;
         }
         return contentType.startsWith("image/")
-                || contentType.startsWith("text/")
                 || MediaType.APPLICATION_PDF_VALUE.equals(contentType)
-                || "application/json".equals(contentType)
-                || "application/javascript".equals(contentType)
-                || "text/javascript".equals(contentType);
+                || "text/plain".equals(contentType);
     }
 
     private String buildContentDisposition(String fileName, boolean inline) throws UnsupportedEncodingException {

@@ -33,6 +33,7 @@ public class SsrfFileTypeFilter {
         FILE_TYPE_WHITE_LIST.add("png");
         FILE_TYPE_WHITE_LIST.add("gif");
         FILE_TYPE_WHITE_LIST.add("bmp");
+        FILE_TYPE_WHITE_LIST.add("webp");
         FILE_TYPE_WHITE_LIST.add("svg");
         FILE_TYPE_WHITE_LIST.add("ico");
         FILE_TYPE_WHITE_LIST.add("heic");
@@ -43,8 +44,18 @@ public class SsrfFileTypeFilter {
         FILE_TYPE_WHITE_LIST.add("docx");
         FILE_TYPE_WHITE_LIST.add("pdf");
         FILE_TYPE_WHITE_LIST.add("csv");
-//        FILE_TYPE_WHITE_LIST.add("xml");
+        FILE_TYPE_WHITE_LIST.add("json");
+        FILE_TYPE_WHITE_LIST.add("js");
+        FILE_TYPE_WHITE_LIST.add("java");
+        FILE_TYPE_WHITE_LIST.add("sql");
+        FILE_TYPE_WHITE_LIST.add("html");
+        FILE_TYPE_WHITE_LIST.add("htm");
+        FILE_TYPE_WHITE_LIST.add("css");
+        FILE_TYPE_WHITE_LIST.add("xml");
+        FILE_TYPE_WHITE_LIST.add("vue");
+        FILE_TYPE_WHITE_LIST.add("sh");
         FILE_TYPE_WHITE_LIST.add("md");
+        FILE_TYPE_WHITE_LIST.add("markdown");
 
         //音视频文件
         FILE_TYPE_WHITE_LIST.add("mp4");
