@@ -10,94 +10,56 @@
       </a-breadcrumb>
     </div>
 
-    <div
-      class="cabinet-upload-zone"
-      :class="{ 'is-drag-over': uploadDragOver }"
-      @dragenter.prevent="handleUploadDragEnter"
-      @dragleave="handleUploadDragLeave"
-      @dragover.prevent="handleUploadDragOver"
-      @drop.prevent="handleUploadDrop"
-    >
-    <div v-if="viewMode === 'grid'" :ref="setGridPanelRef" class="grid-panel"
-      @mousedown="emit('grid-blank-mousedown', $event)">
-      <template v-for="group in groupedSections" :key="group.key">
-        <div v-if="group.title" class="file-group-title">{{ group.title }}</div>
-        <Draggable class="file-grid"
-          :class="[`size-${gridIconSize}`, { 'sortable-disabled': sortField !== 'manual' }]"
-          :model-value="group.items" item-key="id" :disabled="!canManage" :move="handleGridDragMove"
-          ghost-class="file-drag-ghost" chosen-class="file-drag-chosen" drag-class="file-drag-active" :animation="180"
-          :data-group-key="group.key" @start="resetSameGroupSortArm()"
-          @end="resetSameGroupSortArm()" @update:modelValue="emit('grid-order-change', group, $event)">
-          <template #item="{ element }">
-            <FileItem :data-file-id="element.id" :name="element.name" :icon-src="resolveCabinetItemIconSrc(element, gridIconSize)"
-              :size="gridIconSize" :selected="selectedIdSet.has(element.id)"
-              :cutting="clipboardCutIdSet.has(element.id)" :drop-target="false"
-              :editing="isRenaming(element.id)" :edit-value="renamingValue"
-              @click="emit('item-click', element.id, $event)" @dblclick="emit('open', element)"
-              @contextmenu="emit('item-contextmenu', element, $event)"
-              @update:editValue="emit('update:renamingValue', $event)" @submitRename="emit('submit-rename')"
-              @cancelRename="emit('cancel-rename')" />
-          </template>
-        </Draggable>
-      </template>
+    <div class="cabinet-upload-zone" :class="{ 'is-drag-over': uploadDragOver }"
+      @dragenter.prevent="handleUploadDragEnter" @dragleave="handleUploadDragLeave"
+      @dragover.prevent="handleUploadDragOver" @drop.prevent="handleUploadDrop">
+      <div v-if="viewMode === 'grid'" :ref="setGridPanelRef" class="grid-panel"
+        @mousedown="emit('grid-blank-mousedown', $event)">
+        <template v-for="group in groupedSections" :key="group.key">
+          <div v-if="group.title" class="file-group-title">{{ group.title }}</div>
+          <Draggable class="file-grid"
+            :class="[`size-${gridIconSize}`, { 'sortable-disabled': sortField !== 'manual' }]"
+            :model-value="group.items" item-key="id" :disabled="!canManage" :move="handleGridDragMove"
+            ghost-class="file-drag-ghost" chosen-class="file-drag-chosen" drag-class="file-drag-active" :animation="180"
+            :data-group-key="group.key" @start="resetSameGroupSortArm()" @end="resetSameGroupSortArm()"
+            @update:modelValue="emit('grid-order-change', group, $event)">
+            <template #item="{ element }">
+              <FileItem :data-file-id="element.id" :name="element.name"
+                :icon-src="resolveCabinetItemIconSrc(element, gridIconSize)" :size="gridIconSize"
+                :selected="selectedIdSet.has(element.id)" :cutting="clipboardCutIdSet.has(element.id)"
+                :drop-target="false" :editing="isRenaming(element.id)" :edit-value="renamingValue"
+                @click="emit('item-click', element.id, $event)" @dblclick="emit('open', element)"
+                @contextmenu="emit('item-contextmenu', element, $event)"
+                @update:editValue="emit('update:renamingValue', $event)" @submitRename="emit('submit-rename')"
+                @cancelRename="emit('cancel-rename')" />
+            </template>
+          </Draggable>
+        </template>
 
-      <div v-if="selectionBox.visible" class="selection-marquee" :style="{
-        left: `${selectionBox.left}px`,
-        top: `${selectionBox.top}px`,
-        width: `${selectionBox.width}px`,
-        height: `${selectionBox.height}px`,
-      }"></div>
-    </div>
-
-    <div v-else-if="groupField === 'none'" class="grouped-table">
-      <div class="grouped-table-header">
-        <div class="col-name">名称</div>
-        <div class="col-create-date">创建日期</div>
-        <div class="col-update-date">修改日期</div>
-        <div class="col-type">类型</div>
-        <div class="col-size">大小</div>
+        <div v-if="selectionBox.visible" class="selection-marquee" :style="{
+          left: `${selectionBox.left}px`,
+          top: `${selectionBox.top}px`,
+          width: `${selectionBox.width}px`,
+          height: `${selectionBox.height}px`,
+        }"></div>
       </div>
-      <div class="grouped-table-body">
-        <div v-for="item in sortedFilteredFolderItems" :key="item.id" class="grouped-table-row"
-          :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
-          @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
-          @contextmenu.prevent="emit('item-contextmenu', item, $event)">
-          <div class="grouped-cell col-name">
-            <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name" style="margin-right: 10px;" draggable="false" />
-            <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
-              @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
-              @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
-            <span v-else class="grouped-file-name">{{ item.name }}</span>
-          </div>
-          <div class="grouped-cell col-create-date">{{ item.createTime }}</div>
-          <div class="grouped-cell col-update-date">{{ item.updateTime }}</div>
-          <div class="grouped-cell col-type">{{ resolveTypeLabel(item) }}</div>
-          <div class="grouped-cell col-size">{{ item.type === 'folder' ? '-' : item.size }}</div>
+
+      <div v-else-if="groupField === 'none'" class="grouped-table">
+        <div class="grouped-table-header">
+          <div class="col-name">名称</div>
+          <div class="col-create-date">创建日期</div>
+          <div class="col-update-date">修改日期</div>
+          <div class="col-type">类型</div>
+          <div class="col-size">大小</div>
         </div>
-      </div>
-    </div>
-
-    <div v-else class="grouped-table">
-      <div class="grouped-table-header">
-        <div class="col-name">名称</div>
-        <div class="col-create-date">创建日期</div>
-        <div class="col-update-date">修改日期</div>
-        <div class="col-type">类型</div>
-        <div class="col-size">大小</div>
-      </div>
-      <div class="grouped-table-body">
-        <div v-for="group in groupedSections" :key="group.key" class="grouped-table-section">
-          <div class="grouped-table-group-title">
-            <span class="grouped-table-group-arrow">⌄</span>
-            <span>{{ group.title }}</span>
-          </div>
-          <div v-for="item in group.items" :key="item.id" class="grouped-table-row"
-          :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
-          @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
-            @contextmenu.prevent="emit('item-contextmenu', item, $event)"
-        >
+        <div class="grouped-table-body">
+          <div v-for="item in sortedFilteredFolderItems" :key="item.id" class="grouped-table-row"
+            :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
+            @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
+            @contextmenu.prevent="emit('item-contextmenu', item, $event)">
             <div class="grouped-cell col-name">
-              <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name" style="margin-right: 10px;" draggable="false" />
+              <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name"
+                style="margin-right: 10px;" draggable="false" />
               <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
                 @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
                 @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
@@ -110,12 +72,46 @@
           </div>
         </div>
       </div>
-    </div>
+
+      <div v-else class="grouped-table">
+        <div class="grouped-table-header">
+          <div class="col-name">名称</div>
+          <div class="col-create-date">创建日期</div>
+          <div class="col-update-date">修改日期</div>
+          <div class="col-type">类型</div>
+          <div class="col-size">大小</div>
+        </div>
+        <div class="grouped-table-body">
+          <div v-for="group in groupedSections" :key="group.key" class="grouped-table-section">
+            <div class="grouped-table-group-title">
+              <span class="grouped-table-group-arrow">⌄</span>
+              <span>{{ group.title }}</span>
+            </div>
+            <div v-for="item in group.items" :key="item.id" class="grouped-table-row"
+              :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
+              @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
+              @contextmenu.prevent="emit('item-contextmenu', item, $event)">
+              <div class="grouped-cell col-name">
+                <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name"
+                  style="margin-right: 10px;" draggable="false" />
+                <a-input v-if="isRenaming(item.id)" :value="renamingValue" class="rename-input" size="small" @click.stop
+                  @update:value="emit('update:renamingValue', $event)" @pressEnter="emit('submit-rename')"
+                  @blur="emit('submit-rename')" @keydown.esc.stop.prevent="emit('cancel-rename')" />
+                <span v-else class="grouped-file-name">{{ item.name }}</span>
+              </div>
+              <div class="grouped-cell col-create-date">{{ item.createTime }}</div>
+              <div class="grouped-cell col-update-date">{{ item.updateTime }}</div>
+              <div class="grouped-cell col-type">{{ resolveTypeLabel(item) }}</div>
+              <div class="grouped-cell col-size">{{ item.type === 'folder' ? '-' : item.size }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <ul v-if="contextMenu.visible && contextMenu.mode === 'item'" class="context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
-      <li @click="emit('open-menu-action')">打开</li>
+      <!-- <li @click="emit('open-menu-action')">打开</li> -->
       <li v-if="contextMenuTargetItem?.type === 'file'" @click="emit('preview')">预览</li>
       <li @click="emit('download')">下载</li>
       <li @click="emit('copy')">复制</li>

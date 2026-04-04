@@ -9,12 +9,34 @@
         </a-button>
       </Dropdown>
       <div v-if="canManage" ref="uploadWrapRef" class="cabinet-toolbar-upload-wrap">
-        <a-upload :show-upload-list="false" :multiple="true" :before-upload="beforeUpload">
+        <input
+          ref="fileUploadInputRef"
+          class="cabinet-file-input"
+          type="file"
+          multiple
+          @change="handleFileInputChange"
+        />
+        <input
+          ref="folderUploadInputRef"
+          class="cabinet-folder-input"
+          type="file"
+          multiple
+          webkitdirectory
+          @change="handleFolderInputChange"
+        />
+        <a-dropdown :trigger="['click']" placement="bottomLeft">
           <a-button>
             <Icon icon="ant-design:upload-outlined" />
             上传
+            <Icon icon="ant-design:down-outlined" class="ml-1 text-[12px]" />
           </a-button>
-        </a-upload>
+          <template #overlay>
+            <a-menu>
+              <a-menu-item @click="openUploadFileDialog">上传文件</a-menu-item>
+              <a-menu-item @click="openUploadFolderDialog">上传文件夹</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </div>
       <a-button :disabled="selectedCount === 0" @click="emit('download')">
         <Icon icon="ant-design:download-outlined" />
@@ -154,6 +176,8 @@
   });
 
   const uploadWrapRef = ref<HTMLElement | null>(null);
+  const fileUploadInputRef = ref<HTMLInputElement | null>(null);
+  const folderUploadInputRef = ref<HTMLInputElement | null>(null);
   const gridViewTooltipOpen = ref(false);
 
   const createMenuList: DropMenu[] = [
@@ -176,12 +200,50 @@
     if (!props.canManage) {
       return;
     }
-    const input = uploadWrapRef.value?.querySelector?.('input[type="file"]') as HTMLInputElement | undefined;
-    input?.click();
+    openUploadFileDialog();
+  }
+
+  function openUploadFileDialog() {
+    if (!props.canManage) {
+      return;
+    }
+    if (fileUploadInputRef.value) {
+      fileUploadInputRef.value.value = '';
+      fileUploadInputRef.value.click();
+    }
+  }
+
+  function openUploadFolderDialog() {
+    if (!props.canManage) {
+      return;
+    }
+    if (folderUploadInputRef.value) {
+      folderUploadInputRef.value.value = '';
+      folderUploadInputRef.value.click();
+    }
+  }
+
+  async function handleFileInputChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files || []);
+    for (const file of files) {
+      await props.beforeUpload(file);
+    }
+    input.value = '';
+  }
+
+  async function handleFolderInputChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files || []);
+    for (const file of files) {
+      await props.beforeUpload(file);
+    }
+    input.value = '';
   }
 
   defineExpose({
     openUploadDialog,
+    openUploadFolderDialog,
   });
 
   const emit = defineEmits<{
@@ -213,6 +275,14 @@
   .cabinet-toolbar-upload-wrap {
     display: inline-flex;
     align-items: center;
+  }
+
+  .cabinet-folder-input {
+    display: none;
+  }
+
+  .cabinet-file-input {
+    display: none;
   }
 
   .toolbar-search {
