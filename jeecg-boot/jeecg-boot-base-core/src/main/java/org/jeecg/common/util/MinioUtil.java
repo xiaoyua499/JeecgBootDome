@@ -201,21 +201,33 @@ public class MinioUtil {
      * @return
      */
     public static String upload(InputStream stream,String relativePath) throws Exception {
+        return upload(stream, relativePath, null);
+    }
+
+    /**
+     * 上传文件到minio
+     * @param stream 文件流
+     * @param relativePath 相对路径
+     * @param customBucket 自定义桶
+     * @return 文件地址
+     */
+    public static String upload(InputStream stream, String relativePath, String customBucket) throws Exception {
         initMinio(minioUrl, minioName,minioPass);
-        if(minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build())) {
+        String targetBucket = oConvertUtils.isNotEmpty(customBucket) ? customBucket : bucketName;
+        if(minioClient.bucketExists(BucketExistsArgs.builder().bucket(targetBucket).build())) {
             log.info("Bucket already exists.");
         } else {
             // 创建一个名为ota的存储桶
-            minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+            minioClient.makeBucket(MakeBucketArgs.builder().bucket(targetBucket).build());
             log.info("create a new bucket.");
         }
         PutObjectArgs objectArgs = PutObjectArgs.builder().object(relativePath)
-                .bucket(bucketName)
+                .bucket(targetBucket)
                 .contentType("application/octet-stream")
                 .stream(stream,stream.available(),-1).build();
         minioClient.putObject(objectArgs);
         stream.close();
-        return minioUrl+bucketName+"/"+relativePath;
+        return minioUrl+targetBucket+"/"+relativePath;
     }
 
 }

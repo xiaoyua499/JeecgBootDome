@@ -13,6 +13,7 @@ enum Api {
   folder = '/sys/cabinet/folder',
   file = '/sys/cabinet/file',
   rename = '/sys/cabinet/rename',
+  content = '/sys/cabinet/content',
   order = '/sys/cabinet/order',
   move = '/sys/cabinet/move',
   copy = '/sys/cabinet/copy',
@@ -95,6 +96,11 @@ interface CabinetRenamePayload {
   name: string;
 }
 
+interface CabinetUpdateContentPayload {
+  id: string;
+  content: string;
+}
+
 interface CabinetMovePayload {
   itemIds: string[];
   targetParentId: string | null;
@@ -167,6 +173,9 @@ export const createCabinetFile = (payload: CabinetCreateFilePayload, options?: C
 
 export const renameCabinetItem = (payload: CabinetRenamePayload) =>
   defHttp.put<CabinetBootstrapItemDTO>({ url: Api.rename, params: payload });
+
+export const updateCabinetFileContent = (payload: CabinetUpdateContentPayload) =>
+  defHttp.put<CabinetBootstrapItemDTO>({ url: Api.content, params: payload });
 
 export const moveCabinetItems = (payload: CabinetMovePayload) =>
   defHttp.put<void>({

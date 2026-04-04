@@ -10,6 +10,7 @@ import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
 import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
@@ -37,6 +38,8 @@ public interface ICabinetService extends IService<CabinetItem> {
     CabinetItemVO renameItem(CabinetRenameDTO request);
 
     CabinetItemVO updateIcon(CabinetUpdateIconDTO request);
+
+    CabinetItemVO updateFileContent(CabinetUpdateContentDTO request);
 
     void updateItemOrder(CabinetUpdateOrderDTO request);
 

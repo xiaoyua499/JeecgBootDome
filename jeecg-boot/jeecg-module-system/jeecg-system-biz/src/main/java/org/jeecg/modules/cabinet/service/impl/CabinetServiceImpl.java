@@ -22,6 +22,7 @@ import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
 import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
@@ -222,6 +223,34 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             item.setIconKey(iconKey);
             item.setCustomIconPath(null);
         }
+        updateById(item);
+        return toItemVO(item);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CabinetItemVO updateFileContent(CabinetUpdateContentDTO request) {
+        if (request == null) {
+            throw new JeecgBootException("文件内容不能为空");
+        }
+        CabinetItem item = requireAccessibleItem(request.getId(), true);
+        if (CabinetConstant.SCOPE_PUBLIC.equals(item.getScope())) {
+            throw new JeecgBootException("公柜文件不支持编辑");
+        }
+        if (!CabinetConstant.ITEM_TYPE_FILE.equals(item.getItemType())) {
+            throw new JeecgBootException("仅支持编辑文件内容");
+        }
+        if (oConvertUtils.isEmpty(item.getFilePath())) {
+            throw new JeecgBootException("当前文件缺少物理存储路径");
+        }
+        String normalizedExt = resolveFileExt(item.getName(), item.getExt());
+        if (!CabinetConstant.EDITABLE_TEXT_EXTS.contains(normalizedExt)) {
+            throw new JeecgBootException("当前文件类型不支持编辑");
+        }
+
+        String content = request.getContent() == null ? "" : request.getContent();
+        cabinetStorageService.writeText(item.getFilePath(), content);
+        item.setSizeBytes((long) content.getBytes(StandardCharsets.UTF_8).length);
         updateById(item);
         return toItemVO(item);
     }

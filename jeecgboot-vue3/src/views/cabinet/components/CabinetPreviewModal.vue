@@ -9,7 +9,14 @@
   >
     <div class="cabinet-preview-modal">
       <div class="cabinet-preview-toolbar" v-if="item?.filePath">
-        <a-button type="link" @click="openInNewWindow">在新窗口打开</a-button>
+        <div class="cabinet-preview-toolbar-actions">
+          <a-button type="link" @click="openInNewWindow">在新窗口打开</a-button>
+          <a-button v-if="canEditCurrentFile && !editing" type="primary" @click="startEditing">编辑</a-button>
+          <template v-if="editing">
+            <a-button @click="cancelEditing">取消</a-button>
+            <a-button type="primary" :loading="saving" @click="handleSave">保存</a-button>
+          </template>
+        </div>
       </div>
 
       <a-spin :spinning="loading" tip="正在加载预览...">
@@ -23,28 +30,39 @@
           />
 
           <JMarkdownEditor
-            v-else-if="previewKind === 'markdown'"
+            v-else-if="previewKind === 'markdown' && !editing"
             :value="textContent"
             :disabled="true"
             :preview="{ mode: 'view', action: [] }"
             :height="560"
           />
 
+          <JMarkdownEditor v-else-if="previewKind === 'markdown'" v-model:value="draftContent" :height="560" />
+
           <JCodeEditor
-            v-else-if="previewKind === 'code'"
+            v-else-if="previewKind === 'code' && !editing"
             :value="displayCodeContent"
             :disabled="true"
             :language="codeLanguage"
             height="560px"
           />
 
+          <JCodeEditor
+            v-else-if="previewKind === 'code'"
+            v-model:value="draftContent"
+            :language="codeLanguage"
+            height="560px"
+          />
+
           <JEditor
-            v-else-if="previewKind === 'html'"
+            v-else-if="previewKind === 'html' && !editing"
             :value="richTextContent"
             :autoFocus="false"
             :options="{ readonly: true, toolbar: false, menubar: false }"
             :height="560"
           />
+
+          <JEditor v-else-if="previewKind === 'html'" v-model:value="draftContent" :autoFocus="false" :height="560" />
 
           <a-result
             v-else-if="errorText"
@@ -75,18 +93,40 @@
 
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { message } from 'ant-design-vue';
 import { JCodeEditor, JEditor } from '/@/components/Form';
 import JMarkdownEditor from '/@/components/Form/src/jeecg/components/JMarkdownEditor.vue';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
-import { fetchCabinetFileBlob, fetchCabinetFileText } from '../cabinet.api';
+import { fetchCabinetFileBlob, fetchCabinetFileText, updateCabinetFileContent } from '../cabinet.api';
 import type { CabinetItem } from '../types';
-import { isCabinetImageExt } from '../utils';
+import { isCabinetEditableTextExt, isCabinetImageExt } from '../utils';
 
 type PreviewKind = 'pdf' | 'markdown' | 'code' | 'html' | 'unsupported';
 
 const MARKDOWN_EXTS = new Set(['md', 'markdown']);
 const HTML_EXTS = new Set(['html', 'htm']);
-const CODE_EXTS = new Set(['txt', 'json', 'js', 'ts', 'java', 'sql', 'css', 'xml', 'vue', 'sh']);
+const CODE_EXTS = new Set([
+  'txt',
+  'text',
+  'json',
+  'js',
+  'ts',
+  'jsx',
+  'tsx',
+  'java',
+  'sql',
+  'css',
+  'xml',
+  'vue',
+  'sh',
+  'yml',
+  'yaml',
+  'properties',
+  'ini',
+  'log',
+  'csv',
+  'conf',
+]);
 
 const props = defineProps<{
   open: boolean;
@@ -95,10 +135,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
+  (e: 'saved'): void;
 }>();
 
 const loading = ref(false);
+const saving = ref(false);
+const editing = ref(false);
 const textContent = ref('');
+const draftContent = ref('');
 const errorText = ref('');
 const binaryPreviewUrl = ref('');
 let requestToken = 0;
@@ -129,6 +173,16 @@ const previewKind = computed<PreviewKind>(() => {
     return 'code';
   }
   return 'unsupported';
+});
+
+const canEditCurrentFile = computed(() => {
+  if (!props.item || props.item.type !== 'file' || props.item.scope !== 'private') {
+    return false;
+  }
+  if (!props.item.filePath) {
+    return false;
+  }
+  return isCabinetEditableTextExt(normalizedExt.value);
 });
 
 const modalTitle = computed(() => (props.item ? `预览 - ${props.item.name}` : '文件预览'));
@@ -177,19 +231,7 @@ const richTextContent = computed(() => {
   if (previewKind.value !== 'html') {
     return '';
   }
-  const content = textContent.value;
-  if (!content.trim()) {
-    return '';
-  }
-  if (typeof DOMParser === 'undefined') {
-    return content;
-  }
-  try {
-    const documentNode = new DOMParser().parseFromString(content, 'text/html');
-    return sanitizePreviewHtml(documentNode);
-  } catch (error) {
-    return content;
-  }
+  return extractEditableHtml(textContent.value);
 });
 
 const sanitizePreviewHtml = (documentNode: Document) => {
@@ -239,6 +281,21 @@ const sanitizePreviewHtml = (documentNode: Document) => {
   });
 
   return body.innerHTML.trim() || textContent.value;
+};
+
+const extractEditableHtml = (content: string) => {
+  if (!content.trim()) {
+    return '';
+  }
+  if (typeof DOMParser === 'undefined') {
+    return content;
+  }
+  try {
+    const documentNode = new DOMParser().parseFromString(content, 'text/html');
+    return sanitizePreviewHtml(documentNode);
+  } catch (error) {
+    return content;
+  }
 };
 
 const containsTemplateMarker = (value: string) => {
@@ -298,6 +355,18 @@ const openInNewWindow = () => {
   }
 };
 
+const startEditing = () => {
+  if (!canEditCurrentFile.value || loading.value) {
+    return;
+  }
+  editing.value = true;
+};
+
+const cancelEditing = () => {
+  editing.value = false;
+  draftContent.value = previewKind.value === 'html' ? extractEditableHtml(textContent.value) : textContent.value;
+};
+
 const revokeBinaryPreviewUrl = () => {
   if (binaryPreviewUrl.value) {
     URL.revokeObjectURL(binaryPreviewUrl.value);
@@ -312,6 +381,9 @@ const loadPreviewContent = async () => {
   const currentToken = ++requestToken;
   errorText.value = '';
   textContent.value = '';
+  draftContent.value = '';
+  editing.value = false;
+  saving.value = false;
   loading.value = false;
   revokeBinaryPreviewUrl();
 
@@ -360,6 +432,7 @@ const loadPreviewContent = async () => {
       return;
     }
     textContent.value = content;
+    draftContent.value = previewKind.value === 'html' ? extractEditableHtml(content) : content;
   } catch (error: any) {
     if (currentToken !== requestToken) {
       return;
@@ -369,6 +442,55 @@ const loadPreviewContent = async () => {
     if (currentToken === requestToken) {
       loading.value = false;
     }
+  }
+};
+
+const buildHtmlContentForSave = (sourceContent: string, nextBodyContent: string) => {
+  if (!sourceContent.trim() || typeof DOMParser === 'undefined') {
+    return nextBodyContent;
+  }
+  const hasHtmlShell = /<html[\s>]/i.test(sourceContent) || /<body[\s>]/i.test(sourceContent);
+  if (!hasHtmlShell) {
+    return nextBodyContent;
+  }
+  try {
+    const documentNode = new DOMParser().parseFromString(sourceContent, 'text/html');
+    if (!documentNode.body) {
+      return nextBodyContent;
+    }
+    documentNode.body.innerHTML = nextBodyContent;
+    const doctypeMatch = sourceContent.match(/<!doctype[^>]*>/i);
+    const doctype = doctypeMatch ? `${doctypeMatch[0]}\n` : '';
+    return `${doctype}${documentNode.documentElement.outerHTML}`;
+  } catch (error) {
+    return nextBodyContent;
+  }
+};
+
+const buildSaveContent = () => {
+  if (previewKind.value === 'html') {
+    return buildHtmlContentForSave(textContent.value, draftContent.value);
+  }
+  return draftContent.value;
+};
+
+const handleSave = async () => {
+  if (!props.item || !canEditCurrentFile.value) {
+    return;
+  }
+  saving.value = true;
+  try {
+    const nextContent = buildSaveContent();
+    await updateCabinetFileContent({ id: props.item.id, content: nextContent });
+    textContent.value = nextContent;
+    draftContent.value = previewKind.value === 'html' ? extractEditableHtml(nextContent) : nextContent;
+    editing.value = false;
+    emit('saved');
+    message.success('保存成功');
+  } catch (error: any) {
+    message.error(error?.message || '保存失败');
+  } finally {
+    saving.value = false;
   }
 };
 
@@ -394,6 +516,12 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 8px;
+}
+
+.cabinet-preview-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .preview-frame {

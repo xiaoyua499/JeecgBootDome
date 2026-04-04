@@ -12,6 +12,7 @@ import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
 import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.service.ICabinetService;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
@@ -78,6 +79,12 @@ public class CabinetController {
     @PutMapping("/icon")
     public Result<CabinetItemVO> updateIcon(@RequestBody CabinetUpdateIconDTO request) {
         return Result.OK(cabinetService.updateIcon(request));
+    }
+
+    @Operation(summary = "文件柜-更新文本文件内容")
+    @PutMapping("/content")
+    public Result<CabinetItemVO> updateContent(@RequestBody CabinetUpdateContentDTO request) {
+        return Result.OK(cabinetService.updateFileContent(request));
     }
 
     @Operation(summary = "文件柜-手动排序")

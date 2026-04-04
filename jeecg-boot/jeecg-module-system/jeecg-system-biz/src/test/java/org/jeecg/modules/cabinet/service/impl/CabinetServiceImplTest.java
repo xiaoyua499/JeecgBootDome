@@ -1,11 +1,13 @@
 package org.jeecg.modules.cabinet.service.impl;
 
 import org.jeecg.common.exception.JeecgBootException;
+import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.cabinet.constant.CabinetConstant;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
 import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
 import org.jeecg.modules.cabinet.entity.CabinetPreference;
 import org.jeecg.modules.cabinet.model.CabinetAccessContext;
@@ -19,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.InputStream;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -277,6 +280,45 @@ class CabinetServiceImplTest {
         assertThat(preference.getGridIconSize()).isEqualTo(CabinetConstant.DEFAULT_GRID_ICON_SIZE);
     }
 
+    @Test
+    void updateFileContentSavesPrivateTextFileAndUpdatesSize() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        RecordingStorageService storageService = service.storageService();
+        service.put(file("note", null, "note.txt", "cabinet/file/note.txt", 10));
+
+        service.updateFileContent(updateContent("note", "hello cabinet"));
+
+        assertThat(storageService.writtenPath()).isEqualTo("cabinet/file/note.txt");
+        assertThat(storageService.writtenContent()).isEqualTo("hello cabinet");
+        assertThat(service.getById("note").getSizeBytes()).isEqualTo((long) "hello cabinet".getBytes(StandardCharsets.UTF_8).length);
+    }
+
+    @Test
+    void updateFileContentRejectsPublicFile() {
+        InMemoryCabinetService service = new InMemoryCabinetService(
+            new CabinetAccessContext(CabinetConstant.SCOPE_PUBLIC, CabinetConstant.OWNER_KEY_PUBLIC, CabinetConstant.SHARED_TENANT_ID, loginUser("admin"), true)
+        );
+        CabinetItem publicFile = file("public-note", null, "制度说明.txt", "cabinet/file/public-note.txt", 10);
+        publicFile.setScope(CabinetConstant.SCOPE_PUBLIC);
+        publicFile.setOwnerKey(CabinetConstant.OWNER_KEY_PUBLIC);
+        publicFile.setTenantId(CabinetConstant.SHARED_TENANT_ID);
+        service.put(publicFile);
+
+        assertThatThrownBy(() -> service.updateFileContent(updateContent("public-note", "new content")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("公柜文件不支持编辑");
+    }
+
+    @Test
+    void updateFileContentRejectsBinaryFile() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(file("cover", null, "cover.png", "cabinet/file/cover.png", 10));
+
+        assertThatThrownBy(() -> service.updateFileContent(updateContent("cover", "fake image content")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("当前文件类型不支持编辑");
+    }
+
     private static CabinetMoveDTO move(List<String> itemIds, String targetParentId) {
         CabinetMoveDTO request = new CabinetMoveDTO();
         request.setItemIds(itemIds);
@@ -324,6 +366,19 @@ class CabinetServiceImplTest {
         request.setViewMode(viewMode);
         request.setGridIconSize(gridIconSize);
         return request;
+    }
+
+    private static CabinetUpdateContentDTO updateContent(String id, String content) {
+        CabinetUpdateContentDTO request = new CabinetUpdateContentDTO();
+        request.setId(id);
+        request.setContent(content);
+        return request;
+    }
+
+    private static LoginUser loginUser(String username) {
+        LoginUser loginUser = new LoginUser();
+        loginUser.setUsername(username);
+        return loginUser;
     }
 
     private static CabinetItem folder(String id, String parentId, String name, String hasChild, int sortNo) {
@@ -395,6 +450,17 @@ class CabinetServiceImplTest {
         @Override
         protected CabinetAccessContext resolveAccessContext(String scope, boolean writable) {
             return accessContext;
+        }
+
+        @Override
+        protected LoginUser getRequiredLoginUser() {
+            if (accessContext.getLoginUser() != null) {
+                return accessContext.getLoginUser();
+            }
+            String username = CabinetConstant.SCOPE_PUBLIC.equals(accessContext.getScope()) && accessContext.isCanManage()
+                ? CabinetConstant.ADMIN_USERNAME
+                : accessContext.getOwnerKey();
+            return loginUser(username);
         }
 
         @Override
@@ -475,10 +541,18 @@ class CabinetServiceImplTest {
     private static class RecordingStorageService implements ICabinetStorageService {
 
         private final List<String> deletedPaths = new ArrayList<>();
+        private String writtenPath;
+        private String writtenContent;
 
         @Override
         public InputStream openStream(String filePath) {
             return InputStream.nullInputStream();
+        }
+
+        @Override
+        public void writeText(String filePath, String content) {
+            this.writtenPath = filePath;
+            this.writtenContent = content;
         }
 
         @Override
@@ -489,6 +563,14 @@ class CabinetServiceImplTest {
 
         List<String> deletedPaths() {
             return deletedPaths;
+        }
+
+        String writtenPath() {
+            return writtenPath;
+        }
+
+        String writtenContent() {
+            return writtenContent;
         }
     }
 }

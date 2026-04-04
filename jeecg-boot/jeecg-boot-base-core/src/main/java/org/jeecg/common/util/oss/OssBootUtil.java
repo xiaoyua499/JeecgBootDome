@@ -328,17 +328,32 @@ public class OssBootUtil {
      * @return
      */
     public static String upload(InputStream stream, String relativePath) {
+        return upload(stream, relativePath, null);
+    }
+
+    /**
+     * 上传文件到oss
+     * @param stream 文件流
+     * @param relativePath 相对路径
+     * @param customBucket 自定义桶
+     * @return 访问地址
+     */
+    public static String upload(InputStream stream, String relativePath, String customBucket) {
         String filePath = null;
         String fileUrl = relativePath;
         initOss(endPoint, accessKeyId, accessKeySecret);
+        String targetBucket = oConvertUtils.isNotEmpty(customBucket) ? customBucket : bucketName;
+        if (!ossClient.doesBucketExist(targetBucket)) {
+            ossClient.createBucket(targetBucket);
+        }
         if (oConvertUtils.isNotEmpty(staticDomain) && staticDomain.toLowerCase().startsWith(CommonConstant.STR_HTTP)) {
             filePath = staticDomain + SymbolConstant.SINGLE_SLASH + relativePath;
         } else {
-            filePath = "https://" + bucketName + "." + endPoint + SymbolConstant.SINGLE_SLASH + fileUrl;
+            filePath = "https://" + targetBucket + "." + endPoint + SymbolConstant.SINGLE_SLASH + fileUrl;
         }
-        PutObjectResult result = ossClient.putObject(bucketName, fileUrl.toString(),stream);
+        PutObjectResult result = ossClient.putObject(targetBucket, fileUrl, stream);
         // 设置权限(公开读)
-        ossClient.setBucketAcl(bucketName, CannedAccessControlList.PublicRead);
+        ossClient.setBucketAcl(targetBucket, CannedAccessControlList.PublicRead);
         if (result != null) {
             log.info("------OSS文件上传成功------" + fileUrl);
         }

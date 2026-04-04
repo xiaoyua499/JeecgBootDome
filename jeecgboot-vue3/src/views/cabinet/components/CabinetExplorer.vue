@@ -42,7 +42,7 @@
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
     <CabinetCreateItemModal @register="registerCreateItemModal" @success="handleCreateItemSuccess" />
     <CabinetCustomizeIconModal @register="registerCustomizeIconModal" @success="handleCustomizeIconSuccess" />
-    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" />
+    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" @saved="handlePreviewSaved" />
   </div>
 </template>
 
@@ -736,6 +736,10 @@ const handlePreviewMenuAction = () => {
     return;
   }
   handleOpen(target);
+};
+
+const handlePreviewSaved = async () => {
+  await reloadBootstrap({ silent: true });
 };
 
 const resolveDownloadItemIds = () => {
