@@ -80,7 +80,7 @@
   const helperText = computed(() =>
     itemType.value === 'folder'
       ? '请输入当前目录下新的文件夹名称。'
-      : `请输入当前目录下新的文件名称；未填写扩展名时会默认补成 .txt，仅支持新建 ${CABINET_CREATABLE_FILE_EXTS.join(' / ')} 类型文件。`,
+      : `请输入当前目录下新的文本文件名称；未填写扩展名时会默认补成 .txt，仅支持新建 ${CABINET_CREATABLE_FILE_EXTS.join(' / ')} 类型文件。`,
   );
 
   async function handleSubmit() {
@@ -93,7 +93,7 @@
         message.warning(itemType.value === 'folder' ? '请输入文件夹名称' : '请输入文件名称');
         return;
       }
-      // 这里只放行文档类白名单，图片/视频/压缩包等都统一拦截。
+      // 新建空文件只放行可编辑的文本类型，避免生成无法编辑的空壳文件。
       if (itemType.value === 'file' && !isCabinetCreatableFileExt(resolveCabinetFileExt(finalName))) {
         message.warning(`仅支持新建 ${CABINET_CREATABLE_FILE_EXTS.join(' / ')} 类型文件`);
         return;

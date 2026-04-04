@@ -46,6 +46,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -183,17 +186,30 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         CabinetAccessContext context = resolveAccessContext(request.getScope(), true);
         String parentId = normalizeParentId(request.getParentId());
         String name = requireName(request.getName(), "文件名称不能为空");
+        String ext = resolveFileExt(name, request.getExt());
         String filePath = trimToNull(request.getFilePath());
 
         validateParent(parentId, context);
         ensureSiblingNameAvailable(context, parentId, name, null);
 
         CabinetItem item = buildBaseItem(context, parentId, CabinetConstant.ITEM_TYPE_FILE, name);
-        item.setExt(resolveFileExt(name, request.getExt()));
+        item.setId(IdWorker.getIdStr());
+        item.setExt(ext);
+        if (filePath == null) {
+            ensureEditableEmptyFileExt(ext);
+            filePath = buildEmptyTextFilePath(item.getId(), ext);
+        }
         item.setFilePath(filePath);
-        item.setSizeBytes(request.getSizeBytes() == null ? 0L : Math.max(request.getSizeBytes(), 0L));
+        if (filePath != null && request.getSizeBytes() != null) {
+            item.setSizeBytes(Math.max(request.getSizeBytes(), 0L));
+        } else {
+            item.setSizeBytes(0L);
+        }
         item.setHasChild(CabinetConstant.HAS_CHILD_NO);
         save(item);
+        if (trimToNull(request.getFilePath()) == null) {
+            cabinetStorageService.writeText(filePath, "");
+        }
         refreshParentHasChild(parentId);
         return toItemVO(item);
     }
@@ -1274,6 +1290,17 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             throw new JeecgBootException(message);
         }
         return normalized;
+    }
+
+    protected void ensureEditableEmptyFileExt(String ext) {
+        if (!CabinetConstant.EDITABLE_TEXT_EXTS.contains(ext)) {
+            throw new JeecgBootException("仅支持新建可编辑的文本空文件，请先上传该文件");
+        }
+    }
+
+    protected String buildEmptyTextFilePath(String itemId, String ext) {
+        String datePath = LocalDate.now(ZoneId.of("Asia/Shanghai")).format(DateTimeFormatter.BASIC_ISO_DATE);
+        return "cabinet/file/manual/" + datePath + "/" + itemId + "." + ext;
     }
 
     protected String trimToNull(String value) {

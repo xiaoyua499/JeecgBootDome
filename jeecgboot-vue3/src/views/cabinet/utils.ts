@@ -227,7 +227,7 @@ export const CABINET_EDITABLE_TEXT_EXTS = [
   'csv',
   'conf',
 ] as const;
-export const CABINET_CREATABLE_FILE_EXTS = ['txt', 'doc', 'docx', 'xls', 'xlsx', 'pdf'] as const;
+export const CABINET_CREATABLE_FILE_EXTS = [...CABINET_EDITABLE_TEXT_EXTS] as const;
 
 export function isCabinetImageExt(ext: string) {
   const normalized = ext.trim().toLowerCase();

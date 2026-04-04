@@ -4,6 +4,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.cabinet.constant.CabinetConstant;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
@@ -354,6 +355,30 @@ class CabinetServiceImplTest {
             .hasMessageContaining("当前文件类型不支持编辑");
     }
 
+    @Test
+    void createFileCreatesEmptyTextFileForEditableExt() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        RecordingStorageService storageService = service.storageService();
+
+        CabinetItemVO created = service.createFile(createFile(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "notes.txt", null, 0L, "txt"));
+
+        assertThat(created.getId()).isNotBlank();
+        assertThat(created.getFilePath()).contains("/" + created.getId() + ".txt");
+        assertThat(created.getSizeBytes()).isEqualTo(0L);
+        assertThat(storageService.writtenPath()).isEqualTo(created.getFilePath());
+        assertThat(storageService.writtenContent()).isEmpty();
+        assertThat(service.getById(created.getId()).getFilePath()).isEqualTo(created.getFilePath());
+    }
+
+    @Test
+    void createFileRejectsUnsupportedEmptyBinaryFile() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+
+        assertThatThrownBy(() -> service.createFile(createFile(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "archive.zip", null, 0L, "zip")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("仅支持新建可编辑的文本空文件");
+    }
+
     private static CabinetMoveDTO move(List<String> itemIds, String targetParentId) {
         CabinetMoveDTO request = new CabinetMoveDTO();
         request.setItemIds(itemIds);
@@ -416,6 +441,17 @@ class CabinetServiceImplTest {
         request.setGroupField(groupField);
         request.setViewMode(viewMode);
         request.setGridIconSize(gridIconSize);
+        return request;
+    }
+
+    private static CabinetCreateFileDTO createFile(String scope, String parentId, String name, String filePath, Long sizeBytes, String ext) {
+        CabinetCreateFileDTO request = new CabinetCreateFileDTO();
+        request.setScope(scope);
+        request.setParentId(parentId);
+        request.setName(name);
+        request.setFilePath(filePath);
+        request.setSizeBytes(sizeBytes);
+        request.setExt(ext);
         return request;
     }
 
