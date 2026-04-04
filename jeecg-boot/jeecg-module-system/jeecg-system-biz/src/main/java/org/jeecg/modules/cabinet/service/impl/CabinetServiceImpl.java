@@ -258,9 +258,6 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             throw new JeecgBootException("文件内容不能为空");
         }
         CabinetItem item = requireAccessibleItem(request.getId(), true);
-        if (CabinetConstant.SCOPE_PUBLIC.equals(item.getScope())) {
-            throw new JeecgBootException("公柜文件不支持编辑");
-        }
         if (!CabinetConstant.ITEM_TYPE_FILE.equals(item.getItemType())) {
             throw new JeecgBootException("仅支持编辑文件内容");
         }

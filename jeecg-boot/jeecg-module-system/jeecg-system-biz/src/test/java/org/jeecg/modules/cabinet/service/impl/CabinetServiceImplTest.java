@@ -334,15 +334,17 @@ class CabinetServiceImplTest {
         InMemoryCabinetService service = new InMemoryCabinetService(
             new CabinetAccessContext(CabinetConstant.SCOPE_PUBLIC, CabinetConstant.OWNER_KEY_PUBLIC, CabinetConstant.SHARED_TENANT_ID, loginUser("admin"), true)
         );
+        RecordingStorageService storageService = service.storageService();
         CabinetItem publicFile = file("public-note", null, "制度说明.txt", "cabinet/file/public-note.txt", 10);
         publicFile.setScope(CabinetConstant.SCOPE_PUBLIC);
         publicFile.setOwnerKey(CabinetConstant.OWNER_KEY_PUBLIC);
         publicFile.setTenantId(CabinetConstant.SHARED_TENANT_ID);
         service.put(publicFile);
 
-        assertThatThrownBy(() -> service.updateFileContent(updateContent("public-note", "new content")))
-            .isInstanceOf(JeecgBootException.class)
-            .hasMessageContaining("公柜文件不支持编辑");
+        service.updateFileContent(updateContent("public-note", "new content"));
+
+        assertThat(storageService.writtenPath()).isEqualTo("cabinet/file/public-note.txt");
+        assertThat(storageService.writtenContent()).isEqualTo("new content");
     }
 
     @Test

@@ -131,6 +131,7 @@ const CODE_EXTS = new Set([
 const props = defineProps<{
   open: boolean;
   item: CabinetItem | null;
+  canManage?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -176,7 +177,7 @@ const previewKind = computed<PreviewKind>(() => {
 });
 
 const canEditCurrentFile = computed(() => {
-  if (!props.item || props.item.type !== 'file' || props.item.scope !== 'private') {
+  if (!props.item || props.item.type !== 'file' || !props.canManage) {
     return false;
   }
   if (!props.item.filePath) {

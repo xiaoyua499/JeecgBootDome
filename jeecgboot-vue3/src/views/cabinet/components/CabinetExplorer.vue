@@ -42,7 +42,7 @@
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
     <CabinetCreateItemModal @register="registerCreateItemModal" @success="handleCreateItemSuccess" />
     <CabinetCustomizeIconModal @register="registerCustomizeIconModal" @success="handleCustomizeIconSuccess" />
-    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" @saved="handlePreviewSaved" />
+    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" :can-manage="canManageRef" @saved="handlePreviewSaved" />
   </div>
 </template>
 
