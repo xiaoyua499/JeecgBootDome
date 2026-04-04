@@ -53,6 +53,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.text.Collator;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -605,12 +606,28 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             queryWrapper.eq(CabinetItem::getParentId, parentId);
         }
         if (keyword != null) {
+            String fuzzyKeyword = "%" + keyword + "%";
             queryWrapper.and(wrapper -> wrapper
                 .like(CabinetItem::getName, keyword)
                 .or()
-                .like(CabinetItem::getExt, keyword));
+                .like(CabinetItem::getExt, keyword)
+                .or()
+                .apply("DATE_FORMAT(create_time,'%Y-%m-%d %H:%i:%s') like {0}", fuzzyKeyword)
+                .or()
+                .apply("DATE_FORMAT(update_time,'%Y-%m-%d %H:%i:%s') like {0}", fuzzyKeyword));
         }
         return queryWrapper;
+    }
+
+    protected boolean matchesFolderViewKeyword(CabinetItem item, String keyword) {
+        if (keyword == null) {
+            return true;
+        }
+        String normalizedKeyword = keyword.toLowerCase(Locale.ROOT);
+        return containsIgnoreCase(item.getName(), normalizedKeyword)
+            || containsIgnoreCase(item.getExt(), normalizedKeyword)
+            || containsIgnoreCase(formatFolderViewTime(item.getCreateTime()), normalizedKeyword)
+            || containsIgnoreCase(formatFolderViewTime(item.getUpdateTime()), normalizedKeyword);
     }
 
     protected void applyFolderViewOrder(LambdaQueryWrapper<CabinetItem> queryWrapper, String sortField, String sortOrder) {
@@ -1306,6 +1323,17 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    protected boolean containsIgnoreCase(String value, String keyword) {
+        return value != null && keyword != null && value.toLowerCase(Locale.ROOT).contains(keyword);
+    }
+
+    protected String formatFolderViewTime(Date value) {
+        if (value == null) {
+            return "";
+        }
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(value);
     }
 
     protected String resolveFileExt(String fileName, String fallbackExt) {

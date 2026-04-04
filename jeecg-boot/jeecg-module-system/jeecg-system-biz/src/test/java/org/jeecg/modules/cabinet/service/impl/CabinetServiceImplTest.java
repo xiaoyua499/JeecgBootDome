@@ -24,8 +24,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -201,6 +204,28 @@ class CabinetServiceImplTest {
 
         assertThat(view.getTotal()).isEqualTo(2);
         assertThat(view.getItems()).extracting("name").containsExactly("合同A.txt", "合同C.txt");
+    }
+
+    @Test
+    void folderViewFiltersByExtCreateTimeAndUpdateTimeKeyword() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        CabinetItem report = file("report", null, "周报.txt", "cabinet/file/report.txt", 10);
+        report.setCreateTime(parseDateTime("2026-04-01 09:30:00"));
+        report.setUpdateTime(parseDateTime("2026-04-03 18:45:00"));
+        service.put(report);
+
+        CabinetItem image = file("image", null, "封面.png", "cabinet/file/cover.png", 20);
+        image.setCreateTime(parseDateTime("2026-03-28 08:00:00"));
+        image.setUpdateTime(parseDateTime("2026-03-29 11:20:00"));
+        service.put(image);
+
+        CabinetFolderViewVO extView = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "name", "asc", "none", "png", 1L, 10L));
+        CabinetFolderViewVO createTimeView = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "name", "asc", "none", "2026-04-01", 1L, 10L));
+        CabinetFolderViewVO updateTimeView = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "name", "asc", "none", "18:45", 1L, 10L));
+
+        assertThat(extView.getItems()).extracting("name").containsExactly("封面.png");
+        assertThat(createTimeView.getItems()).extracting("name").containsExactly("周报.txt");
+        assertThat(updateTimeView.getItems()).extracting("name").containsExactly("周报.txt");
     }
 
     @Test
@@ -500,6 +525,14 @@ class CabinetServiceImplTest {
         return item;
     }
 
+    private static Date parseDateTime(String value) {
+        try {
+            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(value);
+        } catch (ParseException e) {
+            throw new IllegalArgumentException("非法测试时间: " + value, e);
+        }
+    }
+
     private static class InMemoryCabinetService extends CabinetServiceImpl {
 
         private final Map<String, CabinetItem> items = new LinkedHashMap<>();
@@ -587,7 +620,7 @@ class CabinetServiceImplTest {
 
             List<CabinetItemVO> matchedItems = listCabinetItems(context).stream()
                 .filter(item -> sameParent(item.getParentId(), parentId))
-                .filter(item -> keyword == null || item.getName().contains(keyword) || item.getExt().contains(keyword))
+                .filter(item -> matchesFolderViewKeyword(item, keyword))
                 .sorted(cabinetItemComparator(sortField, sortOrder))
                 .map(this::toItemVO)
                 .collect(Collectors.toList());
