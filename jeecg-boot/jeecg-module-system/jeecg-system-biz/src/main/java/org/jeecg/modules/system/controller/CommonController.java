@@ -14,6 +14,7 @@ import org.jeecg.modules.system.util.HttpFileToMultipartFileUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.MediaType;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +26,8 @@ import org.springframework.web.servlet.ModelAndView;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.net.URLConnection;
+import java.nio.file.Files;
 
 /**
  * <p>
@@ -209,9 +212,10 @@ public class CommonController {
                 return;
                 //throw new RuntimeException();
             }
-            // 设置强制下载不打开
-            response.setContentType("application/force-download");
-            response.addHeader("Content-Disposition", "attachment;fileName=" + new String(file.getName().getBytes("UTF-8"),"iso-8859-1"));
+            String contentType = resolveContentType(file);
+            response.setContentType(contentType);
+            response.setHeader("Content-Disposition", buildContentDisposition(file.getName(), shouldPreviewInline(contentType)));
+            response.setHeader("Content-Length", String.valueOf(file.length()));
             
             // 结合 StreamingResponseBody 的流式写法
             try (InputStream inputStream = new BufferedInputStream(new FileInputStream(file));
@@ -229,6 +233,39 @@ public class CommonController {
             e.printStackTrace();
         }
 
+    }
+
+    private String resolveContentType(File file) {
+        try {
+            String contentType = Files.probeContentType(file.toPath());
+            if (oConvertUtils.isNotEmpty(contentType)) {
+                return contentType;
+            }
+        } catch (IOException e) {
+            log.warn("探测文件类型失败: {}", file.getAbsolutePath(), e);
+        }
+        String guessedType = URLConnection.guessContentTypeFromName(file.getName());
+        if (oConvertUtils.isNotEmpty(guessedType)) {
+            return guessedType;
+        }
+        return MediaType.APPLICATION_OCTET_STREAM_VALUE;
+    }
+
+    private boolean shouldPreviewInline(String contentType) {
+        if (oConvertUtils.isEmpty(contentType)) {
+            return false;
+        }
+        return contentType.startsWith("image/")
+                || contentType.startsWith("text/")
+                || MediaType.APPLICATION_PDF_VALUE.equals(contentType)
+                || "application/json".equals(contentType)
+                || "application/javascript".equals(contentType)
+                || "text/javascript".equals(contentType);
+    }
+
+    private String buildContentDisposition(String fileName, boolean inline) throws UnsupportedEncodingException {
+        String encodedFileName = new String(fileName.getBytes("UTF-8"),"iso-8859-1");
+        return (inline ? "inline" : "attachment") + ";fileName=" + encodedFileName;
     }
 
 //	/**
