@@ -700,18 +700,25 @@ const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) =>
     return;
   }
   const step = 10;
-  const pageStartSortNo = Math.max(0, (currentPage.value - 1) * pageSize.value) * step + step;
   const replacedGroupIds = new Set(group.items.map((item) => item.id));
   const nextPageItems = groupedSections.value.flatMap((section) =>
     section.key === group.key
       ? nextItems
       : section.items.filter((item) => !replacedGroupIds.has(item.id))
   );
+  const currentSortSlots = currentFolderPageItems.value
+    .map((item) => item.orderNo)
+    .filter((orderNo) => Number.isFinite(orderNo))
+    .sort((left, right) => left - right);
+  const nextSortSlots =
+    currentSortSlots.length === nextPageItems.length
+      ? currentSortSlots
+      : nextPageItems.map((_, index) => (index + 1) * step);
 
   nextPageItems.forEach((item, index) => {
     const currentItem = getItemById(item.id);
     if (currentItem) {
-      currentItem.orderNo = pageStartSortNo + index * step;
+      currentItem.orderNo = nextSortSlots[index] ?? (index + 1) * step;
     }
   });
   currentFolderPageItems.value = [...nextPageItems];
