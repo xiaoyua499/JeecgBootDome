@@ -299,10 +299,34 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
                 throw new JeecgBootException("仅支持当前目录内的手动排序");
             }
         }
-
-        for (CabinetUpdateOrderDTO.CabinetItemOrderDTO itemOrder : request.getItemOrders()) {
-            CabinetItem item = requireExistingItem(itemOrder.getId());
-            item.setSortNo(itemOrder.getSortNo() == null ? 10 : itemOrder.getSortNo());
+        List<CabinetItem> siblingItems = listCabinetItems(context).stream()
+            .filter(item -> sameParent(item.getParentId(), parentId))
+            .collect(Collectors.toList());
+        Map<String, CabinetItem> siblingItemMap = siblingItems.stream()
+            .collect(Collectors.toMap(CabinetItem::getId, item -> item));
+        List<CabinetItem> requestedItemsInOrder = itemIds.stream()
+            .map(siblingItemMap::get)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+        Set<String> requestedIdSet = new LinkedHashSet<>(itemIds);
+        List<CabinetItem> normalizedItems = new ArrayList<>();
+        boolean insertedRequestedItems = false;
+        for (CabinetItem siblingItem : siblingItems) {
+            if (requestedIdSet.contains(siblingItem.getId())) {
+                if (!insertedRequestedItems) {
+                    normalizedItems.addAll(requestedItemsInOrder);
+                    insertedRequestedItems = true;
+                }
+                continue;
+            }
+            normalizedItems.add(siblingItem);
+        }
+        if (!insertedRequestedItems) {
+            normalizedItems.addAll(requestedItemsInOrder);
+        }
+        for (int index = 0; index < normalizedItems.size(); index += 1) {
+            CabinetItem item = normalizedItems.get(index);
+            item.setSortNo((index + 1) * 10);
             updateById(item);
         }
     }

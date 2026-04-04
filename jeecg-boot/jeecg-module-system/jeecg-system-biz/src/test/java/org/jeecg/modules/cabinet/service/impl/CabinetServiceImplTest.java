@@ -244,6 +244,24 @@ class CabinetServiceImplTest {
     }
 
     @Test
+    void updateItemOrderNormalizesDuplicateSortNumbers() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(file("a", null, "A.txt", "cabinet/file/a.txt", 60));
+        service.put(file("b", null, "B.txt", "cabinet/file/b.txt", 60));
+        service.put(file("c", null, "C.txt", "cabinet/file/c.txt", 60));
+
+        service.updateItemOrder(updateOrder(CabinetConstant.ROOT_PARENT_ID, List.of(
+            order("c", 60),
+            order("a", 60),
+            order("b", 60)
+        )));
+
+        assertThat(service.getById("c").getSortNo()).isEqualTo(10);
+        assertThat(service.getById("a").getSortNo()).isEqualTo(20);
+        assertThat(service.getById("b").getSortNo()).isEqualTo(30);
+    }
+
+    @Test
     void preferenceIsStoredPerUserAndScope() {
         InMemoryCabinetService service = new InMemoryCabinetService();
 
