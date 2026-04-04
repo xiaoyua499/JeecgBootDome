@@ -109,6 +109,20 @@
       </div>
     </div>
 
+    <div class="cabinet-pagination">
+      <a-pagination
+        :current="currentPage"
+        :page-size="pageSize"
+        :total="totalItems"
+        :show-size-changer="true"
+        :page-size-options="['20', '40', '80', '120']"
+        :show-total="(total) => `共 ${total} 项`"
+        size="small"
+        @change="handlePaginationChange"
+        @showSizeChange="handlePaginationChange"
+      />
+    </div>
+
     <ul v-if="contextMenu.visible && contextMenu.mode === 'item'" class="context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
       <!-- <li @click="emit('open-menu-action')">打开</li> -->
@@ -237,6 +251,9 @@ const props = defineProps({
   sortField: { type: String as PropType<SortField>, required: true },
   sortOrder: { type: String as PropType<SortOrder>, required: true },
   groupField: { type: String as PropType<GroupField>, required: true },
+  currentPage: { type: Number, required: true },
+  pageSize: { type: Number, required: true },
+  totalItems: { type: Number, required: true },
   renamingValue: { type: String, required: true },
   propertyModalVisible: { type: Boolean, required: true },
   propertyItem: { type: Object as PropType<CabinetItem | null>, default: null },
@@ -279,6 +296,7 @@ const emit = defineEmits<{
   (e: 'change-view-mode', value: ViewMode): void;
   (e: 'update:propertyModalVisible', value: boolean): void;
   (e: 'upload-drop', dataTransfer: DataTransfer): void;
+  (e: 'page-change', page: number, pageSize: number): void;
 }>();
 
 const uploadDragOver = ref(false);
@@ -386,6 +404,10 @@ const handleGridDragMove = (evt: DraggableMoveEvent) => {
 
   return false;
 };
+
+const handlePaginationChange = (page: number, size: number) => {
+  emit('page-change', page, size);
+};
 </script>
 
 <style lang="less" scoped>
@@ -415,6 +437,13 @@ const handleGridDragMove = (evt: DraggableMoveEvent) => {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
+
+.cabinet-pagination {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding: 10px 2px 0;
 }
 
 .cabinet-upload-zone.is-drag-over::after {

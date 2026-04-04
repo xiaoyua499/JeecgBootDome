@@ -5,8 +5,7 @@
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
-      @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true"
-      @download="handleDownload"
+      @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true" @download="handleDownload"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
       @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="handleGridIconSizeChange"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -15,28 +14,29 @@
     <div class="cabinet-main">
       <CabinetTreePanel :tree-data="treeData" :selected-keys="selectedTreeKeys" @select="handleTreeSelect" />
 
-    <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
-        :grouped-sections="groupedSections" :sorted-filtered-folder-items="sortedFilteredFolderItems"
+      <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
+        :grouped-sections="pagedGroupedSections" :sorted-filtered-folder-items="pagedSortedFilteredFolderItems"
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
         :selection-box="selectionBox" :context-menu="contextMenu" :context-menu-target-item="contextMenuTargetItem"
         :can-paste-to-current-folder="canPasteToCurrentFolder" :can-paste-to-item-target="canPasteToItemTarget"
-        :can-customize-icons="canCustomizeIcons"
-        :view-mode="viewMode" :grid-icon-size="gridIconSize" :sort-field="sortField" :sort-order="sortOrder"
-        :group-field="groupField" :renaming-value="renamingValue" :property-modal-visible="propertyModalVisible"
-        :property-item="propertyItem" :is-renaming="isRenaming" :build-table-row-event="buildTableRowEvent"
-        :build-table-row-class="buildTableRowClass" :set-file-panel-ref="setFilePanelRef"
-        :set-grid-panel-ref="setGridPanelRef" @hide-context-menu="hideContextMenu"
+        :can-customize-icons="canCustomizeIcons" :view-mode="viewMode" :grid-icon-size="gridIconSize"
+        :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField" :renaming-value="renamingValue"
+        :property-modal-visible="propertyModalVisible" :property-item="propertyItem" :is-renaming="isRenaming"
+        :build-table-row-event="buildTableRowEvent" :build-table-row-class="buildTableRowClass"
+        :set-file-panel-ref="setFilePanelRef" :current-page="currentPage" :page-size="pageSize"
+        :total-items="totalItems" :set-grid-panel-ref="setGridPanelRef" @hide-context-menu="hideContextMenu"
         @blank-contextmenu="handleBlankContextMenu" @enter-folder="enterFolderById"
         @grid-blank-mousedown="handleGridBlankMouseDown" @grid-order-change="handleGridOrderChange"
         @item-click="handleItemClick" @open="handleOpen" @item-contextmenu="handleItemContextMenu"
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
         @open-menu-action="handleOpenMenuAction" @preview="handlePreviewMenuAction" @download="handleDownload"
-        @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
-        @paste-to-item="handlePasteToItem" @customize-icon="handleCustomizeIcon" @rename="handleRename" @delete="handleDelete"
+        @copy="handleCopy" @cut="handleCut" @paste="handlePaste" @paste-to-item="handlePasteToItem"
+        @customize-icon="handleCustomizeIcon" @rename="handleRename" @delete="handleDelete"
         @view-property="handleViewProperty" @create-item="handleCreateItem" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
         @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
-        @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop" />
+        @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop"
+        @page-change="handlePageChange" />
     </div>
 
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
@@ -105,6 +105,8 @@ const sortField = ref<SortField>('manual');
 const sortOrder = ref<SortOrder>('asc');
 const groupField = ref<GroupField>('none');
 const currentFolderId = ref(CABINET_ROOT_ID);
+const currentPage = ref(1);
+const pageSize = ref(20);
 const selectedTreeKeys = ref<string[]>([CABINET_ROOT_ID]);
 const filePanelRef = ref<HTMLElement | null>(null);
 const gridPanelRef = ref<HTMLElement | null>(null);
@@ -314,13 +316,13 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
       message.success('已刷新');
     }
-  } catch (error) {}
+  } catch (error) { }
 };
 
 const initializeCabinet = async () => {
   try {
     await loadViewPreference();
-  } catch (error) {}
+  } catch (error) { }
   await reloadBootstrap({ silent: true });
 };
 
@@ -330,7 +332,6 @@ const {
   groupedSections,
   breadcrumbItems,
   treeData,
-  currentVisibleItemIds,
   sortFieldLabel,
   sortOrderLabel,
   groupFieldLabel,
@@ -345,6 +346,25 @@ const {
   clipboardState,
   canManage: canManageRef,
 });
+
+const totalItems = computed(() => sortedFilteredFolderItems.value.length);
+const pagedSortedFilteredFolderItems = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return sortedFilteredFolderItems.value.slice(start, start + pageSize.value);
+});
+const pagedGroupedSections = computed(() => {
+  if (groupField.value === 'none') {
+    return [{ key: 'all', title: '', items: pagedSortedFilteredFolderItems.value }];
+  }
+  const pagedIdSet = new Set(pagedSortedFilteredFolderItems.value.map((item) => item.id));
+  return groupedSections.value
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => pagedIdSet.has(item.id)),
+    }))
+    .filter((group) => group.items.length > 0);
+});
+const currentVisibleItemIds = computed(() => pagedSortedFilteredFolderItems.value.map((item) => item.id));
 
 // 选择相关交互：单选、多选、框选、快捷键全选等。
 const {
@@ -584,7 +604,7 @@ const submitRename = async () => {
     cancelRename();
     await reloadBootstrap({ silent: true });
     message.success('重命名成功');
-  } catch (error) {}
+  } catch (error) { }
 };
 
 const enterFolderById = (folderId: string) => {
@@ -630,6 +650,7 @@ const handleOpen = (item: CabinetItem) => {
 };
 
 const handleSearch = () => {
+  currentPage.value = 1;
   hideContextMenu();
   clearSelection();
 };
@@ -844,7 +865,7 @@ const handleCustomizeIconSuccess = ({
       await updateCabinetIcon({ id: itemId, iconKey, customIconPath: uploadedCustomIconPath });
       await reloadBootstrap({ silent: true });
       message.success('图标已更新');
-    } catch (error) {}
+    } catch (error) { }
   })();
 };
 
@@ -871,6 +892,15 @@ const handleUploadDrop = async (dataTransfer: DataTransfer) => {
 
 const handleRefresh = async () => {
   await reloadBootstrap();
+};
+
+const handlePageChange = (page: number, size?: number) => {
+  currentPage.value = page;
+  if (size && size !== pageSize.value) {
+    pageSize.value = size;
+  }
+  hideContextMenu();
+  clearSelection();
 };
 
 // 默认名统一基于当前目录全部同级名称生成，避免文件与文件夹重名。
@@ -908,18 +938,18 @@ const handleCreateItemSuccess = async ({ type, name }: { type: ItemType; name: s
       type === 'folder'
         ? await createCabinetFolder({ scope: props.scope, parentId, name })
         : await createCabinetFile({
-            scope: props.scope,
-            parentId,
-            name,
-            ext: resolveCabinetFileExt(name),
-            sizeBytes: 0,
-          });
+          scope: props.scope,
+          parentId,
+          name,
+          ext: resolveCabinetFileExt(name),
+          sizeBytes: 0,
+        });
     await reloadBootstrap({ silent: true });
     if (createdItem?.id) {
       selectSingleItem(createdItem.id);
     }
     message.success(type === 'folder' ? '文件夹已创建' : '文件已创建');
-  } catch (error) {}
+  } catch (error) { }
 };
 
 const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '') => {
@@ -968,6 +998,17 @@ const handleGlobalClick = () => {
   hideContextMenu();
 };
 
+watch([currentFolderId, searchKeyword, sortField, sortOrder, groupField], () => {
+  currentPage.value = 1;
+});
+
+watch([totalItems, pageSize], () => {
+  const totalPages = Math.max(1, Math.ceil(totalItems.value / pageSize.value));
+  if (currentPage.value > totalPages) {
+    currentPage.value = totalPages;
+  }
+});
+
 onMounted(() => {
   void initializeCabinet();
   window.addEventListener('click', handleGlobalClick);
@@ -1008,5 +1049,4 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
 }
-
 </style>
