@@ -1,13 +1,16 @@
 import { defHttp } from '/@/utils/http/axios';
 import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
-import type { CabinetScope } from './types';
+import type { CabinetScope, GroupField, SortField, SortOrder } from './types';
 
 enum Api {
   commonUpload = '/sys/common/upload',
   bootstrap = '/sys/cabinet/bootstrap',
+  folderView = '/sys/cabinet/folder-view',
+  preference = '/sys/cabinet/preference',
   folder = '/sys/cabinet/folder',
   file = '/sys/cabinet/file',
   rename = '/sys/cabinet/rename',
+  order = '/sys/cabinet/order',
   move = '/sys/cabinet/move',
   copy = '/sys/cabinet/copy',
   delete = '/sys/cabinet/delete',
@@ -35,6 +38,30 @@ export interface CabinetBootstrapDTO {
   scope: CabinetScope;
   canManage: boolean;
   items: CabinetBootstrapItemDTO[];
+}
+
+export interface CabinetFolderViewGroupDTO {
+  key: string;
+  title: string;
+  items: CabinetBootstrapItemDTO[];
+}
+
+export interface CabinetFolderViewDTO {
+  scope: CabinetScope;
+  parentId: string | null;
+  sortField: SortField;
+  sortOrder: SortOrder;
+  groupField: GroupField;
+  canManage: boolean;
+  items: CabinetBootstrapItemDTO[];
+  groups: CabinetFolderViewGroupDTO[];
+}
+
+export interface CabinetPreferenceDTO {
+  scope: CabinetScope;
+  sortField: SortField;
+  sortOrder: SortOrder;
+  groupField: GroupField;
 }
 
 interface CabinetScopedParentPayload {
@@ -78,10 +105,39 @@ interface CabinetUpdateIconPayload {
   customIconPath?: string;
 }
 
+interface CabinetFolderViewPayload extends CabinetScopedParentPayload {
+  sortField: SortField;
+  sortOrder: SortOrder;
+  groupField: GroupField;
+}
+
+interface CabinetUpdateOrderPayload {
+  parentId: string | null;
+  itemOrders: Array<{
+    id: string;
+    sortNo: number;
+  }>;
+}
+
 const normalizeParentId = (parentId: string | null) => parentId ?? 'root';
 
 export const bootstrapCabinet = (scope: CabinetScope) =>
   defHttp.get<CabinetBootstrapDTO>({ url: Api.bootstrap, params: { scope } });
+
+export const fetchCabinetFolderView = (payload: CabinetFolderViewPayload) =>
+  defHttp.get<CabinetFolderViewDTO>({
+    url: Api.folderView,
+    params: {
+      ...payload,
+      parentId: normalizeParentId(payload.parentId),
+    },
+  });
+
+export const fetchCabinetPreference = (scope: CabinetScope) =>
+  defHttp.get<CabinetPreferenceDTO>({ url: Api.preference, params: { scope } });
+
+export const updateCabinetPreference = (payload: CabinetPreferenceDTO) =>
+  defHttp.put<CabinetPreferenceDTO>({ url: Api.preference, params: payload });
 
 export const createCabinetFolder = (payload: CabinetCreateFolderPayload, options?: CabinetRequestOptions) =>
   defHttp.post<CabinetBootstrapItemDTO>({
@@ -135,6 +191,15 @@ export const deleteCabinetItems = (itemIds: string[]) =>
 
 export const updateCabinetIcon = (payload: CabinetUpdateIconPayload) =>
   defHttp.put<CabinetBootstrapItemDTO>({ url: Api.icon, params: payload });
+
+export const updateCabinetItemOrder = (payload: CabinetUpdateOrderPayload) =>
+  defHttp.put<void>({
+    url: Api.order,
+    params: {
+      ...payload,
+      parentId: normalizeParentId(payload.parentId),
+    },
+  });
 
 export const uploadCabinetBinary = (
   file: File,

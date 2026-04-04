@@ -6,12 +6,17 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
+import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
 import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.service.ICabinetService;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
+import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
 import org.jeecg.modules.cabinet.vo.CabinetItemVO;
+import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,6 +35,24 @@ public class CabinetController {
     @GetMapping("/bootstrap")
     public Result<CabinetBootstrapVO> bootstrap(@RequestParam("scope") String scope) {
         return Result.OK(cabinetService.bootstrap(scope));
+    }
+
+    @Operation(summary = "文件柜-当前目录排序/分组视图")
+    @GetMapping("/folder-view")
+    public Result<CabinetFolderViewVO> folderView(CabinetFolderViewQueryDTO request) {
+        return Result.OK(cabinetService.folderView(request));
+    }
+
+    @Operation(summary = "文件柜-视图偏好")
+    @GetMapping("/preference")
+    public Result<CabinetPreferenceVO> getPreference(@RequestParam("scope") String scope) {
+        return Result.OK(cabinetService.getPreference(scope));
+    }
+
+    @Operation(summary = "文件柜-保存视图偏好")
+    @PutMapping("/preference")
+    public Result<CabinetPreferenceVO> updatePreference(@RequestBody CabinetPreferenceDTO request) {
+        return Result.OK(cabinetService.updatePreference(request));
     }
 
     @Operation(summary = "文件柜-新建文件夹")
@@ -54,6 +77,13 @@ public class CabinetController {
     @PutMapping("/icon")
     public Result<CabinetItemVO> updateIcon(@RequestBody CabinetUpdateIconDTO request) {
         return Result.OK(cabinetService.updateIcon(request));
+    }
+
+    @Operation(summary = "文件柜-手动排序")
+    @PutMapping("/order")
+    public Result<String> updateOrder(@RequestBody CabinetUpdateOrderDTO request) {
+        cabinetService.updateItemOrder(request);
+        return Result.OK("排序成功");
     }
 
     @Operation(summary = "文件柜-移动")

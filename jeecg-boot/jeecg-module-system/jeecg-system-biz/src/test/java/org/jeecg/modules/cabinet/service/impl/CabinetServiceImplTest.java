@@ -3,9 +3,16 @@ package org.jeecg.modules.cabinet.service.impl;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.cabinet.constant.CabinetConstant;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
+import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
+import org.jeecg.modules.cabinet.entity.CabinetPreference;
 import org.jeecg.modules.cabinet.model.CabinetAccessContext;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
+import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
+import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
+import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
 import org.jeecg.modules.cabinet.service.ICabinetStorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -17,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,6 +114,131 @@ class CabinetServiceImplTest {
         assertThat(storageService.deletedPaths()).containsExactly("cabinet/file/shared.txt");
     }
 
+    @Test
+    void bootstrapPublicCabinetReturnsItemsAcrossTenants() {
+        InMemoryCabinetService service = new InMemoryCabinetService(
+            new CabinetAccessContext(CabinetConstant.SCOPE_PUBLIC, CabinetConstant.OWNER_KEY_PUBLIC, CabinetConstant.SHARED_TENANT_ID, null, false)
+        );
+
+        CabinetItem sharedFromAdminTenant = file("public-file", null, "共享制度.docx", "cabinet/file/shared.docx", 10);
+        sharedFromAdminTenant.setScope(CabinetConstant.SCOPE_PUBLIC);
+        sharedFromAdminTenant.setOwnerKey(CabinetConstant.OWNER_KEY_PUBLIC);
+        sharedFromAdminTenant.setTenantId(1000);
+        service.put(sharedFromAdminTenant);
+
+        CabinetBootstrapVO bootstrap = service.bootstrap(CabinetConstant.SCOPE_PUBLIC);
+
+        assertThat(bootstrap.getItems()).hasSize(1);
+        assertThat(bootstrap.getItems().get(0).getName()).isEqualTo("共享制度.docx");
+    }
+
+    @Test
+    void folderViewSortsCurrentFolderByNameDescending() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(file("alpha", null, "Alpha.txt", "cabinet/file/alpha.txt", 20));
+        service.put(file("beta", null, "Beta.txt", "cabinet/file/beta.txt", 10));
+        service.put(file("child", "folder", "Inside.txt", "cabinet/file/inside.txt", 10));
+        service.put(folder("folder", null, "Folder", CabinetConstant.HAS_CHILD_YES, 30));
+
+        CabinetFolderViewVO view = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "name", "desc", "none"));
+
+        assertThat(view.getItems()).extracting("name").containsExactly("Folder", "Beta.txt", "Alpha.txt");
+        assertThat(view.getGroups()).hasSize(1);
+        assertThat(view.getGroups().get(0).getItems()).hasSize(3);
+    }
+
+    @Test
+    void folderViewGroupsCurrentFolderByType() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(folder("docs", null, "文档", CabinetConstant.HAS_CHILD_NO, 10));
+        service.put(file("a", null, "A.txt", "cabinet/file/a.txt", 20));
+        service.put(file("b", null, "B.txt", "cabinet/file/b.txt", 30));
+
+        CabinetFolderViewVO view = service.folderView(folderView(CabinetConstant.SCOPE_PRIVATE, CabinetConstant.ROOT_PARENT_ID, "manual", "asc", "type"));
+
+        assertThat(view.getGroups()).hasSize(2);
+        assertThat(view.getGroups().get(0).getTitle()).isEqualTo("文件夹");
+        assertThat(view.getGroups().get(0).getItems()).extracting("name").containsExactly("文档");
+        assertThat(view.getGroups().get(1).getTitle()).isEqualTo("文件");
+        assertThat(view.getGroups().get(1).getItems()).extracting("name").containsExactly("A.txt", "B.txt");
+    }
+
+    @Test
+    void updateItemOrderPersistsCurrentFolderSortNumbers() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+        service.put(file("a", null, "A.txt", "cabinet/file/a.txt", 10));
+        service.put(file("b", null, "B.txt", "cabinet/file/b.txt", 20));
+
+        service.updateItemOrder(updateOrder(CabinetConstant.ROOT_PARENT_ID, List.of(
+            order("a", 30),
+            order("b", 10)
+        )));
+
+        assertThat(service.getById("a").getSortNo()).isEqualTo(30);
+        assertThat(service.getById("b").getSortNo()).isEqualTo(10);
+    }
+
+    @Test
+    void preferenceIsStoredPerUserAndScope() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+
+        CabinetPreferenceVO privatePreference = service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "name", "desc", "size"));
+        CabinetPreferenceVO publicPreference = service.updatePreference(preference(CabinetConstant.SCOPE_PUBLIC, "updateTime", "asc", "none"));
+
+        assertThat(privatePreference.getSortField()).isEqualTo("name");
+        assertThat(privatePreference.getSortOrder()).isEqualTo("desc");
+        assertThat(privatePreference.getGroupField()).isEqualTo("size");
+
+        assertThat(publicPreference.getSortField()).isEqualTo("updateTime");
+        assertThat(publicPreference.getSortOrder()).isEqualTo("asc");
+        assertThat(publicPreference.getGroupField()).isEqualTo("none");
+
+        assertThat(service.getPreference(CabinetConstant.SCOPE_PRIVATE).getSortField()).isEqualTo("name");
+        assertThat(service.getPreference(CabinetConstant.SCOPE_PUBLIC).getSortField()).isEqualTo("updateTime");
+    }
+
+    @Test
+    void preferenceFallsBackToDefaultsWhenMissing() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+
+        CabinetPreferenceVO preference = service.getPreference(CabinetConstant.SCOPE_PRIVATE);
+
+        assertThat(preference.getSortField()).isEqualTo(CabinetConstant.DEFAULT_SORT_FIELD);
+        assertThat(preference.getSortOrder()).isEqualTo(CabinetConstant.DEFAULT_SORT_ORDER);
+        assertThat(preference.getGroupField()).isEqualTo(CabinetConstant.DEFAULT_GROUP_FIELD);
+    }
+
+    @Test
+    void preferenceRejectsUnsupportedViewFields() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "rank", "asc", "type")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("不支持的排序字段");
+
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "up", "type")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("不支持的排序方向");
+
+        assertThatThrownBy(() -> service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "manual", "asc", "folder")))
+            .isInstanceOf(JeecgBootException.class)
+            .hasMessageContaining("不支持的分组字段");
+    }
+
+    @Test
+    void preferenceUpsertUpdatesExistingRecordInsteadOfDuplicating() {
+        InMemoryCabinetService service = new InMemoryCabinetService();
+
+        service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "name", "asc", "type"));
+        service.updatePreference(preference(CabinetConstant.SCOPE_PRIVATE, "size", "desc", "none"));
+
+        assertThat(service.preferenceCount()).isEqualTo(1);
+        CabinetPreferenceVO preference = service.getPreference(CabinetConstant.SCOPE_PRIVATE);
+        assertThat(preference.getSortField()).isEqualTo("size");
+        assertThat(preference.getSortOrder()).isEqualTo("desc");
+        assertThat(preference.getGroupField()).isEqualTo("none");
+    }
+
     private static CabinetMoveDTO move(List<String> itemIds, String targetParentId) {
         CabinetMoveDTO request = new CabinetMoveDTO();
         request.setItemIds(itemIds);
@@ -117,6 +250,39 @@ class CabinetServiceImplTest {
         CabinetCopyDTO request = new CabinetCopyDTO();
         request.setItemIds(itemIds);
         request.setTargetParentId(targetParentId);
+        return request;
+    }
+
+    private static CabinetFolderViewQueryDTO folderView(String scope, String parentId, String sortField, String sortOrder, String groupField) {
+        CabinetFolderViewQueryDTO request = new CabinetFolderViewQueryDTO();
+        request.setScope(scope);
+        request.setParentId(parentId);
+        request.setSortField(sortField);
+        request.setSortOrder(sortOrder);
+        request.setGroupField(groupField);
+        return request;
+    }
+
+    private static CabinetUpdateOrderDTO updateOrder(String parentId, List<CabinetUpdateOrderDTO.CabinetItemOrderDTO> itemOrders) {
+        CabinetUpdateOrderDTO request = new CabinetUpdateOrderDTO();
+        request.setParentId(parentId);
+        request.setItemOrders(itemOrders);
+        return request;
+    }
+
+    private static CabinetUpdateOrderDTO.CabinetItemOrderDTO order(String id, int sortNo) {
+        CabinetUpdateOrderDTO.CabinetItemOrderDTO request = new CabinetUpdateOrderDTO.CabinetItemOrderDTO();
+        request.setId(id);
+        request.setSortNo(sortNo);
+        return request;
+    }
+
+    private static CabinetPreferenceDTO preference(String scope, String sortField, String sortOrder, String groupField) {
+        CabinetPreferenceDTO request = new CabinetPreferenceDTO();
+        request.setScope(scope);
+        request.setSortField(sortField);
+        request.setSortOrder(sortOrder);
+        request.setGroupField(groupField);
         return request;
     }
 
@@ -153,9 +319,16 @@ class CabinetServiceImplTest {
     private static class InMemoryCabinetService extends CabinetServiceImpl {
 
         private final Map<String, CabinetItem> items = new LinkedHashMap<>();
+        private final Map<String, CabinetPreference> preferences = new LinkedHashMap<>();
         private final RecordingStorageService storageService = new RecordingStorageService();
+        private final CabinetAccessContext accessContext;
 
         private InMemoryCabinetService() {
+            this(new CabinetAccessContext(CabinetConstant.SCOPE_PRIVATE, "alice", 0, null, true));
+        }
+
+        private InMemoryCabinetService(CabinetAccessContext accessContext) {
+            this.accessContext = accessContext;
             ReflectionTestUtils.setField(this, "cabinetStorageService", storageService);
         }
 
@@ -171,9 +344,13 @@ class CabinetServiceImplTest {
             return storageService;
         }
 
+        int preferenceCount() {
+            return preferences.size();
+        }
+
         @Override
         protected CabinetAccessContext resolveAccessContext(String scope, boolean writable) {
-            return new CabinetAccessContext(CabinetConstant.SCOPE_PRIVATE, "alice", 0, null, true);
+            return accessContext;
         }
 
         @Override
@@ -186,9 +363,31 @@ class CabinetServiceImplTest {
             return items.values().stream()
                 .filter(item -> Objects.equals(item.getScope(), context.getScope()))
                 .filter(item -> Objects.equals(item.getOwnerKey(), context.getOwnerKey()))
-                .filter(item -> Objects.equals(item.getTenantId(), context.getTenantId()))
+                .filter(item -> CabinetConstant.SCOPE_PUBLIC.equals(context.getScope()) || Objects.equals(item.getTenantId(), context.getTenantId()))
                 .sorted(defaultItemComparator())
                 .collect(Collectors.toList());
+        }
+
+        @Override
+        protected CabinetPreference getCabinetPreference(String scope, org.jeecg.common.system.vo.LoginUser loginUser) {
+            return preferences.get(preferenceKey(scope));
+        }
+
+        @Override
+        protected void saveCabinetPreference(CabinetPreference preference) {
+            if (preference.getId() == null) {
+                preference.setId(UUID.randomUUID().toString().replace("-", ""));
+            }
+            preferences.put(preferenceKey(preference.getScope()), preference);
+        }
+
+        @Override
+        protected Integer resolvePreferenceTenantId() {
+            return accessContext.getTenantId();
+        }
+
+        private String preferenceKey(String scope) {
+            return accessContext.getTenantId() + "::" + accessContext.getOwnerKey() + "::" + scope;
         }
 
         @Override

@@ -44,7 +44,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
@@ -55,9 +55,13 @@ import {
   createCabinetFile,
   createCabinetFolder,
   deleteCabinetItems,
+  fetchCabinetFolderView,
+  fetchCabinetPreference,
   moveCabinetItems,
   renameCabinetItem,
   updateCabinetIcon,
+  updateCabinetItemOrder,
+  updateCabinetPreference,
   uploadCabinetBinary,
 } from '../cabinet.api';
 import { useCabinetClipboard } from '../composables/useCabinetClipboard';
@@ -147,6 +151,94 @@ const cancelRename = () => {
 
 const resolveApiParentId = (folderId: string) => (folderId === CABINET_ROOT_ID ? null : folderId);
 
+interface CabinetViewPreferenceState {
+  sortField: SortField;
+  sortOrder: SortOrder;
+  groupField: GroupField;
+}
+
+const getCurrentViewPreference = (): CabinetViewPreferenceState => ({
+  sortField: sortField.value,
+  sortOrder: sortOrder.value,
+  groupField: groupField.value,
+});
+
+const applyViewPreference = (preference: CabinetViewPreferenceState) => {
+  sortField.value = preference.sortField;
+  sortOrder.value = preference.sortOrder;
+  groupField.value = preference.groupField;
+};
+
+const mergeFolderViewItems = (items: Parameters<typeof adaptCabinetItem>[0][]) => {
+  if (!items.length) {
+    return;
+  }
+  const nextItemMap = new Map(items.map((item) => {
+    const adapted = adaptCabinetItem(item);
+    return [adapted.id, adapted] as const;
+  }));
+  itemList.value = itemList.value.map((item) => {
+    const nextItem = nextItemMap.get(item.id);
+    return nextItem ? { ...item, ...nextItem } : item;
+  });
+};
+
+const loadViewPreference = async () => {
+  const result = await fetchCabinetPreference(props.scope);
+  applyViewPreference({
+    sortField: result.sortField,
+    sortOrder: result.sortOrder,
+    groupField: result.groupField,
+  });
+};
+
+const persistViewPreference = async () => {
+  await updateCabinetPreference({
+    scope: props.scope,
+    sortField: sortField.value,
+    sortOrder: sortOrder.value,
+    groupField: groupField.value,
+  });
+};
+
+const syncFolderView = async (options?: { showError?: boolean }) => {
+  try {
+    const result = await fetchCabinetFolderView({
+      scope: props.scope,
+      parentId: resolveApiParentId(currentFolderId.value),
+      sortField: sortField.value,
+      sortOrder: sortOrder.value,
+      groupField: groupField.value,
+    });
+    mergeFolderViewItems(result.items);
+    canManageState.value = result.canManage;
+  } catch (error) {
+    if (options?.showError) {
+      message.error('排序/分组视图加载失败');
+    }
+    throw error;
+  }
+};
+
+const savePreferenceAndSyncFolderView = async (
+  nextPreference: Partial<CabinetViewPreferenceState>,
+  options?: { showError?: boolean },
+) => {
+  const previousPreference = getCurrentViewPreference();
+  applyViewPreference({
+    ...previousPreference,
+    ...nextPreference,
+  });
+  hideContextMenu();
+  clearSelection();
+  try {
+    await persistViewPreference();
+    await syncFolderView(options);
+  } catch (error) {
+    applyViewPreference(previousPreference);
+  }
+};
+
 const reloadBootstrap = async (options?: { silent?: boolean }) => {
   try {
     const previousFolderId = currentFolderId.value;
@@ -170,11 +262,19 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
     cancelRename();
     hideContextMenu();
     clearSelection();
+    await syncFolderView();
 
     if (!options?.silent) {
       message.success('已刷新');
     }
   } catch (error) {}
+};
+
+const initializeCabinet = async () => {
+  try {
+    await loadViewPreference();
+  } catch (error) {}
+  await reloadBootstrap({ silent: true });
 };
 
 const {
@@ -450,6 +550,7 @@ const enterFolderById = (folderId: string) => {
   selectedTreeKeys.value = [folderId];
   clearSelection();
   hideContextMenu();
+  void syncFolderView();
 };
 
 const handleTreeSelect = (keys: Array<string | number>) => {
@@ -477,21 +578,15 @@ const handleSearch = () => {
 };
 
 const handleSortFieldChange = (field: SortField) => {
-  sortField.value = field;
-  hideContextMenu();
-  clearSelection();
+  void savePreferenceAndSyncFolderView({ sortField: field }, { showError: true });
 };
 
 const handleSortOrderChange = (order: SortOrder) => {
-  sortOrder.value = order;
-  hideContextMenu();
-  clearSelection();
+  void savePreferenceAndSyncFolderView({ sortOrder: order }, { showError: true });
 };
 
 const handleGroupFieldChange = (field: GroupField) => {
-  groupField.value = field;
-  hideContextMenu();
-  clearSelection();
+  void savePreferenceAndSyncFolderView({ groupField: field }, { showError: true });
 };
 
 const handleViewModeChange = (mode: ViewMode) => {
@@ -522,6 +617,24 @@ const handleGridOrderChange = (group: GroupSection, nextItems: CabinetItem[]) =>
       }
     });
   }
+  void (async () => {
+    try {
+      const currentFolderItems = itemList.value
+        .filter((item) => item.parentId === currentFolderId.value)
+        .sort((left, right) => left.orderNo - right.orderNo);
+      await updateCabinetItemOrder({
+        parentId: resolveApiParentId(currentFolderId.value),
+        itemOrders: currentFolderItems.map((item) => ({
+          id: item.id,
+          sortNo: item.orderNo,
+        })),
+      });
+      await syncFolderView();
+    } catch (error) {
+      await reloadBootstrap({ silent: true });
+      message.error('手动排序保存失败');
+    }
+  })();
 };
 
 const handleItemContextMenu = (item: CabinetItem, event: MouseEvent) => {
@@ -737,10 +850,17 @@ const handleGlobalClick = () => {
 };
 
 onMounted(() => {
-  void reloadBootstrap({ silent: true });
+  void initializeCabinet();
   window.addEventListener('click', handleGlobalClick);
   window.addEventListener('keydown', handleGlobalKeydown);
 });
+
+watch(
+  () => props.scope,
+  () => {
+    void initializeCabinet();
+  },
+);
 
 onBeforeUnmount(() => {
   disposeAllTimers();

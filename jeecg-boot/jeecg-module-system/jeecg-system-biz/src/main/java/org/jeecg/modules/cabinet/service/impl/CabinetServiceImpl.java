@@ -14,16 +14,24 @@ import org.jeecg.modules.cabinet.constant.CabinetConstant;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
+import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
 import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
+import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
+import org.jeecg.modules.cabinet.entity.CabinetPreference;
 import org.jeecg.modules.cabinet.mapper.CabinetItemMapper;
+import org.jeecg.modules.cabinet.mapper.CabinetPreferenceMapper;
 import org.jeecg.modules.cabinet.model.CabinetAccessContext;
 import org.jeecg.modules.cabinet.service.ICabinetService;
 import org.jeecg.modules.cabinet.service.ICabinetStorageService;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
+import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
+import org.jeecg.modules.cabinet.vo.CabinetGroupSectionVO;
 import org.jeecg.modules.cabinet.vo.CabinetItemVO;
+import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +41,9 @@ import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.text.Collator;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -50,6 +60,9 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
     @Autowired
     private ICabinetStorageService cabinetStorageService;
 
+    @Autowired
+    private CabinetPreferenceMapper cabinetPreferenceMapper;
+
     @Override
     public CabinetBootstrapVO bootstrap(String scope) {
         CabinetAccessContext context = resolveAccessContext(scope, false);
@@ -60,6 +73,68 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         result.setCanManage(context.isCanManage());
         result.setItems(items);
         return result;
+    }
+
+    @Override
+    public CabinetFolderViewVO folderView(CabinetFolderViewQueryDTO request) {
+        CabinetAccessContext context = resolveAccessContext(request.getScope(), false);
+        String parentId = normalizeParentId(request.getParentId());
+        validateParent(parentId, context);
+
+        String sortField = normalizeSortField(request.getSortField());
+        String sortOrder = normalizeSortOrder(request.getSortOrder());
+        String groupField = normalizeGroupField(request.getGroupField());
+
+        List<CabinetItemVO> currentFolderItems = listCabinetItems(context).stream()
+            .filter(item -> sameParent(item.getParentId(), parentId))
+            .sorted(cabinetItemComparator(sortField, sortOrder))
+            .map(this::toItemVO)
+            .collect(Collectors.toList());
+
+        CabinetFolderViewVO result = new CabinetFolderViewVO();
+        result.setScope(context.getScope());
+        result.setParentId(parentId);
+        result.setSortField(sortField);
+        result.setSortOrder(sortOrder);
+        result.setGroupField(groupField);
+        result.setCanManage(context.isCanManage());
+        result.setItems(currentFolderItems);
+        result.setGroups(buildGroupSections(currentFolderItems, groupField));
+        return result;
+    }
+
+    @Override
+    public CabinetPreferenceVO getPreference(String scope) {
+        String normalizedScope = normalizeScope(scope);
+        LoginUser loginUser = getRequiredLoginUser();
+        assertReadable(normalizedScope, loginUser);
+        CabinetPreference preference = getCabinetPreference(normalizedScope, loginUser);
+        return toPreferenceVO(normalizedScope, preference);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CabinetPreferenceVO updatePreference(CabinetPreferenceDTO request) {
+        if (request == null) {
+            throw new JeecgBootException("视图偏好不能为空");
+        }
+        String normalizedScope = normalizeScope(request.getScope());
+        LoginUser loginUser = getRequiredLoginUser();
+        assertReadable(normalizedScope, loginUser);
+
+        CabinetPreference preference = getCabinetPreference(normalizedScope, loginUser);
+        if (preference == null) {
+            preference = new CabinetPreference();
+            preference.setScope(normalizedScope);
+            preference.setUserName(loginUser.getUsername());
+            preference.setTenantId(resolvePreferenceTenantId());
+        }
+        preference.setSortField(normalizeSortField(request.getSortField()));
+        preference.setSortOrder(normalizeSortOrder(request.getSortOrder()));
+        preference.setGroupField(normalizeGroupField(request.getGroupField()));
+
+        saveCabinetPreference(preference);
+        return toPreferenceVO(normalizedScope, preference);
     }
 
     @Override
@@ -137,6 +212,36 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         }
         updateById(item);
         return toItemVO(item);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateItemOrder(CabinetUpdateOrderDTO request) {
+        if (request == null || request.getItemOrders() == null || request.getItemOrders().isEmpty()) {
+            throw new JeecgBootException("排序项目不能为空");
+        }
+
+        List<String> itemIds = request.getItemOrders().stream()
+            .map(CabinetUpdateOrderDTO.CabinetItemOrderDTO::getId)
+            .collect(Collectors.toList());
+        CabinetAccessContext context = resolveOperationContext(itemIds, true);
+        String parentId = normalizeParentId(request.getParentId());
+
+        List<CabinetItem> items = itemIds.stream()
+            .map(this::requireExistingItem)
+            .collect(Collectors.toList());
+        for (CabinetItem item : items) {
+            assertItemMatchesContext(item, context);
+            if (!sameParent(item.getParentId(), parentId)) {
+                throw new JeecgBootException("仅支持当前目录内的手动排序");
+            }
+        }
+
+        for (CabinetUpdateOrderDTO.CabinetItemOrderDTO itemOrder : request.getItemOrders()) {
+            CabinetItem item = requireExistingItem(itemOrder.getId());
+            item.setSortNo(itemOrder.getSortNo() == null ? 10 : itemOrder.getSortNo());
+            updateById(item);
+        }
     }
 
     @Override
@@ -288,7 +393,7 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         return new CabinetAccessContext(
             normalizedScope,
             normalizeOwnerKey(normalizedScope, loginUser),
-            resolveTenantId(),
+            resolveTenantId(normalizedScope),
             loginUser,
             canManage(normalizedScope, loginUser)
         );
@@ -329,6 +434,33 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         return loginUser.getUsername();
     }
 
+    protected CabinetPreference getCabinetPreference(String scope, LoginUser loginUser) {
+        return cabinetPreferenceMapper.selectOne(
+            new LambdaQueryWrapper<CabinetPreference>()
+                .eq(CabinetPreference::getScope, scope)
+                .eq(CabinetPreference::getUserName, loginUser.getUsername())
+                .eq(CabinetPreference::getTenantId, resolvePreferenceTenantId())
+                .last("limit 1")
+        );
+    }
+
+    protected void saveCabinetPreference(CabinetPreference preference) {
+        if (oConvertUtils.isEmpty(preference.getId())) {
+            cabinetPreferenceMapper.insert(preference);
+        } else {
+            cabinetPreferenceMapper.updateById(preference);
+        }
+    }
+
+    protected CabinetPreferenceVO toPreferenceVO(String scope, CabinetPreference preference) {
+        CabinetPreferenceVO result = new CabinetPreferenceVO();
+        result.setScope(scope);
+        result.setSortField(normalizeSortField(preference == null ? null : preference.getSortField()));
+        result.setSortOrder(normalizeSortOrder(preference == null ? null : preference.getSortOrder()));
+        result.setGroupField(normalizeGroupField(preference == null ? null : preference.getGroupField()));
+        return result;
+    }
+
     protected void refreshParentHasChild(String parentId) {
         if (oConvertUtils.isEmpty(parentId)) {
             return;
@@ -358,7 +490,7 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         if (item == null) {
             throw new JeecgBootException("文件柜项目不存在");
         }
-        if (!context.getTenantId().equals(item.getTenantId())) {
+        if (isTenantScoped(context.getScope()) && !context.getTenantId().equals(item.getTenantId())) {
             throw new JeecgBootException("无权访问其他租户的文件柜数据");
         }
         if (!context.getScope().equals(item.getScope())) {
@@ -403,10 +535,13 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
     }
 
     protected LambdaQueryWrapper<CabinetItem> buildCabinetQuery(CabinetAccessContext context) {
-        return new LambdaQueryWrapper<CabinetItem>()
-            .eq(CabinetItem::getTenantId, context.getTenantId())
+        LambdaQueryWrapper<CabinetItem> queryWrapper = new LambdaQueryWrapper<CabinetItem>()
             .eq(CabinetItem::getScope, context.getScope())
             .eq(CabinetItem::getOwnerKey, context.getOwnerKey());
+        if (isTenantScoped(context.getScope())) {
+            queryWrapper.eq(CabinetItem::getTenantId, context.getTenantId());
+        }
+        return queryWrapper;
     }
 
     protected Integer nextSortNo(CabinetAccessContext context, String parentId) {
@@ -636,6 +771,186 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         return nextName;
     }
 
+    protected Comparator<CabinetItem> cabinetItemComparator(String sortField, String sortOrder) {
+        if ("manual".equals(sortField)) {
+            return Comparator
+                .comparing(CabinetItem::getSortNo, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(CabinetItem::getName, nullSafeCollator())
+                .thenComparing(CabinetItem::getId, Comparator.nullsLast(String::compareTo));
+        }
+        Comparator<CabinetItem> comparator;
+        switch (sortField) {
+            case "name":
+                comparator = Comparator
+                    .comparing(CabinetItem::getName, nullSafeCollator())
+                    .thenComparing(CabinetItem::getId, Comparator.nullsLast(String::compareTo));
+                break;
+            case "updateTime":
+                comparator = Comparator
+                    .comparing(CabinetItem::getUpdateTime, Comparator.nullsLast(java.util.Date::compareTo))
+                    .thenComparing(CabinetItem::getName, nullSafeCollator())
+                    .thenComparing(CabinetItem::getId, Comparator.nullsLast(String::compareTo));
+                break;
+            case "ext":
+                comparator = Comparator
+                    .comparing(CabinetItem::getExt, nullSafeCollator())
+                    .thenComparing(CabinetItem::getName, nullSafeCollator())
+                    .thenComparing(CabinetItem::getId, Comparator.nullsLast(String::compareTo));
+                break;
+            case "size":
+                comparator = Comparator
+                    .comparing((CabinetItem item) -> item.getSizeBytes() == null ? 0L : item.getSizeBytes())
+                    .thenComparing(CabinetItem::getName, nullSafeCollator())
+                    .thenComparing(CabinetItem::getId, Comparator.nullsLast(String::compareTo));
+                break;
+            default:
+                throw new JeecgBootException("不支持的排序字段: " + sortField);
+        }
+        return "desc".equals(sortOrder) ? comparator.reversed() : comparator;
+    }
+
+    protected List<CabinetGroupSectionVO> buildGroupSections(List<CabinetItemVO> items, String groupField) {
+        if ("none".equals(groupField)) {
+            CabinetGroupSectionVO section = new CabinetGroupSectionVO();
+            section.setKey("all");
+            section.setTitle("");
+            section.setItems(items);
+            return List.of(section);
+        }
+
+        Map<String, CabinetGroupSectionVO> sectionMap = new LinkedHashMap<>();
+        for (CabinetItemVO item : items) {
+            String title = resolveGroupTitle(item, groupField);
+            String key = title == null || title.isEmpty() ? "default" : title;
+            CabinetGroupSectionVO section = sectionMap.computeIfAbsent(key, value -> {
+                CabinetGroupSectionVO next = new CabinetGroupSectionVO();
+                next.setKey(value);
+                next.setTitle(title);
+                next.setItems(new ArrayList<>());
+                return next;
+            });
+            section.getItems().add(item);
+        }
+
+        List<CabinetGroupSectionVO> sections = new ArrayList<>(sectionMap.values());
+        sections.sort(groupSectionComparator(groupField));
+        return sections;
+    }
+
+    protected Comparator<CabinetGroupSectionVO> groupSectionComparator(String groupField) {
+        switch (groupField) {
+            case "type":
+                Map<String, Integer> typeOrder = Map.of("文件夹", 1, "文件", 2);
+                return Comparator.comparing(section -> typeOrder.getOrDefault(section.getTitle(), 99));
+            case "size":
+                Map<String, Integer> sizeOrder = Map.of("文件夹", 1, "1 MB 以下", 2, "1 MB - 10 MB", 3, "10 MB 以上", 4);
+                return Comparator.comparing(section -> sizeOrder.getOrDefault(section.getTitle(), 99));
+            case "updateTime":
+                return Comparator.comparing(CabinetGroupSectionVO::getTitle, nullSafeCollator());
+            case "name":
+                return (left, right) -> {
+                    if ("#".equals(left.getTitle())) {
+                        return "#".equals(right.getTitle()) ? 0 : 1;
+                    }
+                    if ("#".equals(right.getTitle())) {
+                        return -1;
+                    }
+                    return nullSafeEnglishCollator().compare(left.getTitle(), right.getTitle());
+                };
+            default:
+                return Comparator.comparing(CabinetGroupSectionVO::getTitle, nullSafeCollator());
+        }
+    }
+
+    protected String resolveGroupTitle(CabinetItemVO item, String groupField) {
+        switch (groupField) {
+            case "type":
+                return CabinetConstant.ITEM_TYPE_FOLDER.equals(item.getItemType()) ? "文件夹" : "文件";
+            case "name":
+                return resolveNameGroupTitle(item.getName());
+            case "updateTime":
+                return item.getUpdateTime() == null ? "未知日期" : item.getUpdateTime().toInstant().atZone(java.time.ZoneId.of("Asia/Shanghai")).toLocalDate().toString();
+            case "size":
+                if (CabinetConstant.ITEM_TYPE_FOLDER.equals(item.getItemType())) {
+                    return "文件夹";
+                }
+                long size = item.getSizeBytes() == null ? 0L : item.getSizeBytes();
+                if (size < 1024L * 1024L) {
+                    return "1 MB 以下";
+                }
+                if (size < 10L * 1024L * 1024L) {
+                    return "1 MB - 10 MB";
+                }
+                return "10 MB 以上";
+            default:
+                return "";
+        }
+    }
+
+    protected String resolveNameGroupTitle(String name) {
+        String normalized = trimToNull(name);
+        if (normalized == null) {
+            return "#";
+        }
+        String firstChar = normalized.substring(0, 1).toUpperCase(Locale.ROOT);
+        return firstChar.matches("[A-Z]") ? firstChar : "#";
+    }
+
+    protected String normalizeSortField(String sortField) {
+        String normalized = trimToNull(sortField);
+        if (normalized == null) {
+            return CabinetConstant.DEFAULT_SORT_FIELD;
+        }
+        switch (normalized) {
+            case "manual":
+            case "name":
+            case "updateTime":
+            case "ext":
+            case "size":
+                return normalized;
+            default:
+                throw new JeecgBootException("不支持的排序字段: " + sortField);
+        }
+    }
+
+    protected String normalizeSortOrder(String sortOrder) {
+        String normalized = trimToNull(sortOrder);
+        if (normalized == null) {
+            return CabinetConstant.DEFAULT_SORT_ORDER;
+        }
+        if (!"asc".equals(normalized) && !"desc".equals(normalized)) {
+            throw new JeecgBootException("不支持的排序方向: " + sortOrder);
+        }
+        return normalized;
+    }
+
+    protected String normalizeGroupField(String groupField) {
+        String normalized = trimToNull(groupField);
+        if (normalized == null) {
+            return CabinetConstant.DEFAULT_GROUP_FIELD;
+        }
+        switch (normalized) {
+            case "none":
+            case "name":
+            case "updateTime":
+            case "type":
+            case "size":
+                return normalized;
+            default:
+                throw new JeecgBootException("不支持的分组字段: " + groupField);
+        }
+    }
+
+    protected Comparator<String> nullSafeCollator() {
+        Collator collator = Collator.getInstance(Locale.CHINA);
+        return Comparator.nullsLast(collator);
+    }
+
+    protected Comparator<String> nullSafeEnglishCollator() {
+        Collator collator = Collator.getInstance(Locale.US);
+        return Comparator.nullsLast(collator);
+    }
+
     protected String normalizeScope(String scope) {
         String normalizedScope = trimToNull(scope);
         if (normalizedScope == null) {
@@ -653,8 +968,19 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             || (loginUser != null && CabinetConstant.ADMIN_USERNAME.equals(loginUser.getUsername()));
     }
 
-    protected Integer resolveTenantId() {
+    protected Integer resolveTenantId(String scope) {
+        if (CabinetConstant.SCOPE_PUBLIC.equals(scope)) {
+            return CabinetConstant.SHARED_TENANT_ID;
+        }
         return oConvertUtils.getInt(TenantContext.getTenant(), 0);
+    }
+
+    protected Integer resolvePreferenceTenantId() {
+        return oConvertUtils.getInt(TenantContext.getTenant(), 0);
+    }
+
+    protected boolean isTenantScoped(String scope) {
+        return CabinetConstant.SCOPE_PRIVATE.equals(scope);
     }
 
     protected LoginUser getRequiredLoginUser() {
