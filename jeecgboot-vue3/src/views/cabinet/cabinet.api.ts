@@ -1,5 +1,7 @@
 import { defHttp } from '/@/utils/http/axios';
 import type { UploadApiResult } from '/@/api/sys/model/uploadModel';
+import { getHeaders } from '/@/utils/common/compUtils';
+import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import type { CabinetScope, GridIconSize, GroupField, SortField, SortOrder, ViewMode } from './types';
 
 enum Api {
@@ -228,3 +230,16 @@ export const uploadCabinetBinary = (
     },
     { isReturnResponse: true },
   );
+
+export const fetchCabinetFileText = async (filePath: string) => {
+  const response = await fetch(getFileAccessHttpUrl(filePath), {
+    method: 'GET',
+    headers: {
+      ...getHeaders(),
+    } as HeadersInit,
+  });
+  if (!response.ok) {
+    throw new Error(`文件读取失败(${response.status})`);
+  }
+  return response.text();
+};

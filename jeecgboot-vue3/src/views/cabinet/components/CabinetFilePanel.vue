@@ -116,6 +116,7 @@
     <ul v-if="contextMenu.visible && contextMenu.mode === 'item'" class="context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
       <li @click="emit('open-menu-action')">打开</li>
+      <li v-if="contextMenuTargetItem?.type === 'file'" @click="emit('preview')">预览</li>
       <li @click="emit('copy')">复制</li>
       <li v-if="canManage" @click="emit('cut')">剪切</li>
       <li v-if="canPasteToItemTarget" @click="emit('paste-to-item')">粘贴</li>
@@ -230,6 +231,7 @@ const props = defineProps({
   clipboardCutIdSet: { type: Object as PropType<Set<string>>, required: true },
   selectionBox: { type: Object as PropType<SelectionBox>, required: true },
   contextMenu: { type: Object as PropType<ContextMenuState>, required: true },
+  contextMenuTargetItem: { type: Object as PropType<CabinetItem | null>, default: null },
   canPasteToCurrentFolder: { type: Boolean, required: true },
   canPasteToItemTarget: { type: Boolean, required: true },
   canCustomizeIcons: { type: Boolean, required: true },
@@ -261,6 +263,7 @@ const emit = defineEmits<{
   (e: 'submit-rename'): void;
   (e: 'cancel-rename'): void;
   (e: 'open-menu-action'): void;
+  (e: 'preview'): void;
   (e: 'copy'): void;
   (e: 'cut'): void;
   (e: 'paste'): void;

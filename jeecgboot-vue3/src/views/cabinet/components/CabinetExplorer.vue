@@ -14,10 +14,10 @@
     <div class="cabinet-main">
       <CabinetTreePanel :tree-data="treeData" :selected-keys="selectedTreeKeys" @select="handleTreeSelect" />
 
-      <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
+    <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
         :grouped-sections="groupedSections" :sorted-filtered-folder-items="sortedFilteredFolderItems"
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
-        :selection-box="selectionBox" :context-menu="contextMenu"
+        :selection-box="selectionBox" :context-menu="contextMenu" :context-menu-target-item="contextMenuTargetItem"
         :can-paste-to-current-folder="canPasteToCurrentFolder" :can-paste-to-item-target="canPasteToItemTarget"
         :can-customize-icons="canCustomizeIcons"
         :view-mode="viewMode" :grid-icon-size="gridIconSize" :sort-field="sortField" :sort-order="sortOrder"
@@ -29,7 +29,7 @@
         @grid-blank-mousedown="handleGridBlankMouseDown" @grid-order-change="handleGridOrderChange"
         @item-click="handleItemClick" @open="handleOpen" @item-contextmenu="handleItemContextMenu"
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
-        @open-menu-action="handleOpenMenuAction" @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
+        @open-menu-action="handleOpenMenuAction" @preview="handlePreviewMenuAction" @copy="handleCopy" @cut="handleCut" @paste="handlePaste"
         @paste-to-item="handlePasteToItem" @customize-icon="handleCustomizeIcon" @rename="handleRename" @delete="handleDelete"
         @view-property="handleViewProperty" @create-item="handleCreateItem" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
@@ -40,6 +40,7 @@
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
     <CabinetCreateItemModal @register="registerCreateItemModal" @success="handleCreateItemSuccess" />
     <CabinetCustomizeIconModal @register="registerCustomizeIconModal" @success="handleCustomizeIconSuccess" />
+    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" />
   </div>
 </template>
 
@@ -47,7 +48,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
-import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import { adaptCabinetBootstrap, adaptCabinetItem, CABINET_ROOT_ID } from '../adapter';
 import {
   bootstrapCabinet,
@@ -74,6 +74,7 @@ import { buildIndexedSiblingName, buildSiblingName, resolveCabinetFileExt } from
 import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
 import CabinetCustomizeIconModal from './CabinetCustomizeIconModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
+import CabinetPreviewModal from './CabinetPreviewModal.vue';
 import CabinetToolbar from './CabinetToolbar.vue';
 import CabinetTreePanel from './CabinetTreePanel.vue';
 import CabinetUploadProgressModal from './CabinetUploadProgressModal.vue';
@@ -106,6 +107,8 @@ const cabinetToolbarRef = ref<InstanceType<typeof CabinetToolbar> | null>(null);
 const uploadProgressOpen = ref(false);
 const propertyModalVisible = ref(false);
 const propertyItem = ref<CabinetItem | null>(null);
+const previewModalVisible = ref(false);
+const previewItem = ref<CabinetItem | null>(null);
 const renamingItemId = ref('');
 const renamingValue = ref('');
 const clipboardState = ref<ClipboardState | null>(null);
@@ -113,6 +116,7 @@ const canManageState = ref<boolean>(props.canManage);
 const canManageRef = computed(() => canManageState.value);
 const canCustomizeIcons = computed(() => props.scope === 'private' && canManageRef.value);
 const contextMenuTargetId = computed(() => contextMenu.value.targetId);
+const contextMenuTargetItem = computed(() => itemList.value.find((item) => item.id === contextMenu.value.targetId) || null);
 
 const contextMenu = ref({
   visible: false,
@@ -273,6 +277,7 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
   try {
     const previousFolderId = currentFolderId.value;
     const activePropertyItemId = propertyItem.value?.id || '';
+    const activePreviewItemId = previewItem.value?.id || '';
     const result = await bootstrapCabinet(props.scope);
     const nextItemList = adaptCabinetBootstrap(result, props.cabinetName);
     itemList.value = nextItemList;
@@ -286,6 +291,13 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
       propertyItem.value = nextItemList.find((item) => item.id === activePropertyItemId) || null;
       if (!propertyItem.value) {
         propertyModalVisible.value = false;
+      }
+    }
+
+    if (activePreviewItemId) {
+      previewItem.value = nextItemList.find((item) => item.id === activePreviewItemId) || null;
+      if (!previewItem.value) {
+        previewModalVisible.value = false;
       }
     }
 
@@ -595,11 +607,9 @@ const handleOpen = (item: CabinetItem) => {
     enterFolderById(item.id);
     return;
   }
-  if (item.filePath) {
-    window.open(getFileAccessHttpUrl(item.filePath), '_blank');
-    return;
-  }
-  message.info(`打开文件：${item.name}`);
+  previewItem.value = item;
+  previewModalVisible.value = true;
+  hideContextMenu();
 };
 
 const handleSearch = () => {
@@ -695,6 +705,20 @@ const handleOpenMenuAction = () => {
   }
   handleOpen(target);
   hideContextMenu();
+};
+
+const handlePreviewMenuAction = () => {
+  const targetId = contextMenu.value.targetId || selectedItemIds.value[0];
+  if (!targetId) {
+    hideContextMenu();
+    return;
+  }
+  const target = getItemById(targetId);
+  if (!target || target.type !== 'file') {
+    hideContextMenu();
+    return;
+  }
+  handleOpen(target);
 };
 
 const handleRename = () => {
@@ -848,7 +872,11 @@ const showContextMenu = (event: MouseEvent, mode: 'item' | 'blank', itemId = '')
   }
   const rect = filePanelRef.value.getBoundingClientRect();
   const menuWidth = mode === 'blank' ? 186 : 140;
-  const menuHeight = mode === 'blank' ? 262 : canCustomizeIcons.value ? 176 : 140;
+  const targetItem = itemId ? itemList.value.find((item) => item.id === itemId) || null : null;
+  const menuHeight =
+    mode === 'blank'
+      ? 262
+      : (targetItem?.type === 'file' ? 36 : 0) + (canCustomizeIcons.value ? 176 : 140);
   let left = event.clientX - rect.left + filePanelRef.value.scrollLeft;
   let top = event.clientY - rect.top + filePanelRef.value.scrollTop;
   const maxLeft = filePanelRef.value.clientWidth - menuWidth - 8;

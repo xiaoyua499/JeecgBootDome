@@ -198,7 +198,7 @@ export function buildBreadcrumbItems(folderMap: Map<string, CabinetItem>, curren
   return result;
 }
 
-export const CABINET_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif'] as const;
+export const CABINET_IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp'] as const;
 export const CABINET_VIDEO_EXTS = ['mp4', 'avi', 'mov'] as const;
 export const CABINET_CREATABLE_FILE_EXTS = ['txt', 'doc', 'docx', 'xls', 'xlsx', 'pdf'] as const;
 
