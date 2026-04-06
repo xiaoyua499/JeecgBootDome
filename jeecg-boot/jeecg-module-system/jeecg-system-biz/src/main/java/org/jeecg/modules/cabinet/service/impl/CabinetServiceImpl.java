@@ -208,10 +208,11 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
 
         List<CabinetCustomGroup> nextGroups = normalizeCustomGroups(request.getGroups(), normalizedScope, loginUser, existingGroupMap);
         syncCustomGroups(existingGroups, nextGroups, normalizedScope, loginUser);
+        Map<String, String> requestGroupIdMapping = buildCustomGroupIdMapping(request.getGroups(), nextGroups);
 
         List<CabinetItem> folderItems = listCurrentFolderItems(context, normalizedParentId);
         Set<String> folderItemIdSet = folderItems.stream().map(CabinetItem::getId).collect(Collectors.toSet());
-        replaceCurrentFolderCustomGroupItems(normalizedScope, loginUser, folderItemIdSet, request, nextGroups);
+        replaceCurrentFolderCustomGroupItems(normalizedScope, loginUser, folderItemIdSet, request, nextGroups, requestGroupIdMapping);
 
         List<CabinetCustomGroupItem> groupItems = listCustomGroupItems(normalizedScope, loginUser, folderItems);
         return buildCustomGroupStateVO(normalizedScope, normalizedParentId, nextGroups, folderItems, groupItems);
@@ -774,12 +775,32 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         }
     }
 
+    protected Map<String, String> buildCustomGroupIdMapping(
+        List<CabinetCustomGroupStateDTO.CabinetCustomGroupDTO> requestGroups,
+        List<CabinetCustomGroup> nextGroups
+    ) {
+        Map<String, String> mapping = new HashMap<>();
+        if (requestGroups == null || nextGroups == null) {
+            return mapping;
+        }
+        int size = Math.min(requestGroups.size(), nextGroups.size());
+        for (int index = 0; index < size; index += 1) {
+            String requestGroupId = trimToNull(requestGroups.get(index) == null ? null : requestGroups.get(index).getId());
+            String persistedGroupId = trimToNull(nextGroups.get(index) == null ? null : nextGroups.get(index).getId());
+            if (requestGroupId != null && persistedGroupId != null) {
+                mapping.put(requestGroupId, persistedGroupId);
+            }
+        }
+        return mapping;
+    }
+
     protected void replaceCurrentFolderCustomGroupItems(
         String scope,
         LoginUser loginUser,
         Set<String> folderItemIdSet,
         CabinetCustomGroupStateDTO request,
-        List<CabinetCustomGroup> nextGroups
+        List<CabinetCustomGroup> nextGroups,
+        Map<String, String> requestGroupIdMapping
     ) {
         if (!folderItemIdSet.isEmpty()) {
             cabinetCustomGroupItemMapper.delete(
@@ -798,6 +819,9 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             request.getBindings() == null ? Collections.emptyList() : request.getBindings();
         for (CabinetCustomGroupStateDTO.CabinetCustomGroupBindingDTO binding : bindings) {
             String groupId = trimToNull(binding == null ? null : binding.getGroupId());
+            if (groupId != null && requestGroupIdMapping != null) {
+                groupId = requestGroupIdMapping.getOrDefault(groupId, groupId);
+            }
             if (groupId == null || !validGroupMap.containsKey(groupId)) {
                 continue;
             }
