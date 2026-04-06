@@ -7,6 +7,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetCustomGroupStateDTO;
 import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
@@ -16,6 +17,7 @@ import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.service.ICabinetService;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
+import org.jeecg.modules.cabinet.vo.CabinetCustomGroupStateVO;
 import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
 import org.jeecg.modules.cabinet.vo.CabinetItemVO;
 import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
@@ -55,6 +57,21 @@ public class CabinetController {
     @PutMapping("/preference")
     public Result<CabinetPreferenceVO> updatePreference(@RequestBody CabinetPreferenceDTO request) {
         return Result.OK(cabinetService.updatePreference(request));
+    }
+
+    @Operation(summary = "文件柜-自定义分组状态")
+    @GetMapping("/custom-group-state")
+    public Result<CabinetCustomGroupStateVO> getCustomGroupState(
+        @RequestParam("scope") String scope,
+        @RequestParam(value = "parentId", required = false) String parentId
+    ) {
+        return Result.OK(cabinetService.getCustomGroupState(scope, parentId));
+    }
+
+    @Operation(summary = "文件柜-保存自定义分组状态")
+    @PutMapping("/custom-group-state")
+    public Result<CabinetCustomGroupStateVO> saveCustomGroupState(@RequestBody CabinetCustomGroupStateDTO request) {
+        return Result.OK(cabinetService.saveCustomGroupState(request));
     }
 
     @Operation(summary = "文件柜-新建文件夹")

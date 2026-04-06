@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetCustomGroupStateDTO;
 import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
@@ -14,6 +15,7 @@ import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
+import org.jeecg.modules.cabinet.vo.CabinetCustomGroupStateVO;
 import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
 import org.jeecg.modules.cabinet.vo.CabinetItemVO;
 import org.jeecg.modules.cabinet.vo.CabinetPreferenceVO;
@@ -30,6 +32,10 @@ public interface ICabinetService extends IService<CabinetItem> {
     CabinetPreferenceVO getPreference(String scope);
 
     CabinetPreferenceVO updatePreference(CabinetPreferenceDTO request);
+
+    CabinetCustomGroupStateVO getCustomGroupState(String scope, String parentId);
+
+    CabinetCustomGroupStateVO saveCustomGroupState(CabinetCustomGroupStateDTO request);
 
     CabinetItemVO createFolder(CabinetCreateFolderDTO request);
 

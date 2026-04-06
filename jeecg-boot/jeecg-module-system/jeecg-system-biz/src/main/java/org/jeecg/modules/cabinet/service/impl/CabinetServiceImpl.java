@@ -18,6 +18,7 @@ import org.jeecg.modules.cabinet.constant.CabinetConstant;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFileDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCreateFolderDTO;
 import org.jeecg.modules.cabinet.dto.CabinetCopyDTO;
+import org.jeecg.modules.cabinet.dto.CabinetCustomGroupStateDTO;
 import org.jeecg.modules.cabinet.dto.CabinetFolderViewQueryDTO;
 import org.jeecg.modules.cabinet.dto.CabinetMoveDTO;
 import org.jeecg.modules.cabinet.dto.CabinetPreferenceDTO;
@@ -25,14 +26,19 @@ import org.jeecg.modules.cabinet.dto.CabinetRenameDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateContentDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateIconDTO;
 import org.jeecg.modules.cabinet.dto.CabinetUpdateOrderDTO;
+import org.jeecg.modules.cabinet.entity.CabinetCustomGroup;
+import org.jeecg.modules.cabinet.entity.CabinetCustomGroupItem;
 import org.jeecg.modules.cabinet.entity.CabinetItem;
 import org.jeecg.modules.cabinet.entity.CabinetPreference;
+import org.jeecg.modules.cabinet.mapper.CabinetCustomGroupItemMapper;
+import org.jeecg.modules.cabinet.mapper.CabinetCustomGroupMapper;
 import org.jeecg.modules.cabinet.mapper.CabinetItemMapper;
 import org.jeecg.modules.cabinet.mapper.CabinetPreferenceMapper;
 import org.jeecg.modules.cabinet.model.CabinetAccessContext;
 import org.jeecg.modules.cabinet.service.ICabinetService;
 import org.jeecg.modules.cabinet.service.ICabinetStorageService;
 import org.jeecg.modules.cabinet.vo.CabinetBootstrapVO;
+import org.jeecg.modules.cabinet.vo.CabinetCustomGroupStateVO;
 import org.jeecg.modules.cabinet.vo.CabinetFolderViewVO;
 import org.jeecg.modules.cabinet.vo.CabinetGroupSectionVO;
 import org.jeecg.modules.cabinet.vo.CabinetItemVO;
@@ -77,6 +83,12 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
 
     @Autowired
     private CabinetPreferenceMapper cabinetPreferenceMapper;
+
+    @Autowired
+    private CabinetCustomGroupMapper cabinetCustomGroupMapper;
+
+    @Autowired
+    private CabinetCustomGroupItemMapper cabinetCustomGroupItemMapper;
 
     @Override
     public CabinetBootstrapVO bootstrap(String scope) {
@@ -160,6 +172,49 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
 
         saveCabinetPreference(preference);
         return toPreferenceVO(normalizedScope, preference);
+    }
+
+    @Override
+    public CabinetCustomGroupStateVO getCustomGroupState(String scope, String parentId) {
+        String normalizedScope = normalizeScope(scope);
+        LoginUser loginUser = getRequiredLoginUser();
+        assertReadable(normalizedScope, loginUser);
+        CabinetAccessContext context = resolveAccessContext(normalizedScope, false);
+        String normalizedParentId = normalizeParentId(parentId);
+        validateParent(normalizedParentId, context);
+
+        List<CabinetCustomGroup> groups = listCustomGroups(normalizedScope, loginUser);
+        List<CabinetItem> folderItems = listCurrentFolderItems(context, normalizedParentId);
+        List<CabinetCustomGroupItem> groupItems = listCustomGroupItems(normalizedScope, loginUser, folderItems);
+        return buildCustomGroupStateVO(normalizedScope, normalizedParentId, groups, folderItems, groupItems);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CabinetCustomGroupStateVO saveCustomGroupState(CabinetCustomGroupStateDTO request) {
+        if (request == null) {
+            throw new JeecgBootException("自定义分组状态不能为空");
+        }
+        String normalizedScope = normalizeScope(request.getScope());
+        LoginUser loginUser = getRequiredLoginUser();
+        assertReadable(normalizedScope, loginUser);
+        CabinetAccessContext context = resolveAccessContext(normalizedScope, false);
+        String normalizedParentId = normalizeParentId(request.getParentId());
+        validateParent(normalizedParentId, context);
+
+        List<CabinetCustomGroup> existingGroups = listCustomGroups(normalizedScope, loginUser);
+        Map<String, CabinetCustomGroup> existingGroupMap = existingGroups.stream()
+            .collect(Collectors.toMap(CabinetCustomGroup::getId, group -> group));
+
+        List<CabinetCustomGroup> nextGroups = normalizeCustomGroups(request.getGroups(), normalizedScope, loginUser, existingGroupMap);
+        syncCustomGroups(existingGroups, nextGroups, normalizedScope, loginUser);
+
+        List<CabinetItem> folderItems = listCurrentFolderItems(context, normalizedParentId);
+        Set<String> folderItemIdSet = folderItems.stream().map(CabinetItem::getId).collect(Collectors.toSet());
+        replaceCurrentFolderCustomGroupItems(normalizedScope, loginUser, folderItemIdSet, request, nextGroups);
+
+        List<CabinetCustomGroupItem> groupItems = listCustomGroupItems(normalizedScope, loginUser, folderItems);
+        return buildCustomGroupStateVO(normalizedScope, normalizedParentId, nextGroups, folderItems, groupItems);
     }
 
     @Override
@@ -566,6 +621,228 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
         result.setViewMode(normalizeViewMode(preference == null ? null : preference.getViewMode()));
         result.setGridIconSize(normalizeGridIconSize(preference == null ? null : preference.getGridIconSize()));
         return result;
+    }
+
+    protected List<CabinetCustomGroup> listCustomGroups(String scope, LoginUser loginUser) {
+        return cabinetCustomGroupMapper.selectList(
+            new LambdaQueryWrapper<CabinetCustomGroup>()
+                .eq(CabinetCustomGroup::getScope, scope)
+                .eq(CabinetCustomGroup::getUserName, loginUser.getUsername())
+                .eq(CabinetCustomGroup::getTenantId, resolvePreferenceTenantId())
+                .orderByAsc(CabinetCustomGroup::getSortNo)
+                .orderByAsc(CabinetCustomGroup::getCreateTime)
+        );
+    }
+
+    protected List<CabinetItem> listCurrentFolderItems(CabinetAccessContext context, String parentId) {
+        LambdaQueryWrapper<CabinetItem> queryWrapper = buildFolderViewQuery(context, parentId, null);
+        applyFolderViewOrder(queryWrapper, CabinetConstant.DEFAULT_SORT_FIELD, CabinetConstant.DEFAULT_SORT_ORDER);
+        return list(queryWrapper);
+    }
+
+    protected List<CabinetCustomGroupItem> listCustomGroupItems(String scope, LoginUser loginUser, List<CabinetItem> folderItems) {
+        if (folderItems == null || folderItems.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> itemIds = folderItems.stream().map(CabinetItem::getId).collect(Collectors.toList());
+        return cabinetCustomGroupItemMapper.selectList(
+            new LambdaQueryWrapper<CabinetCustomGroupItem>()
+                .eq(CabinetCustomGroupItem::getScope, scope)
+                .eq(CabinetCustomGroupItem::getUserName, loginUser.getUsername())
+                .eq(CabinetCustomGroupItem::getTenantId, resolvePreferenceTenantId())
+                .in(CabinetCustomGroupItem::getItemId, itemIds)
+                .orderByAsc(CabinetCustomGroupItem::getGroupId)
+                .orderByAsc(CabinetCustomGroupItem::getSortNo)
+                .orderByAsc(CabinetCustomGroupItem::getCreateTime)
+        );
+    }
+
+    protected CabinetCustomGroupStateVO buildCustomGroupStateVO(
+        String scope,
+        String parentId,
+        List<CabinetCustomGroup> groups,
+        List<CabinetItem> folderItems,
+        List<CabinetCustomGroupItem> groupItems
+    ) {
+        CabinetCustomGroupStateVO result = new CabinetCustomGroupStateVO();
+        result.setScope(scope);
+        result.setParentId(parentId);
+        result.setGroups(groups.stream().map(this::toCustomGroupVO).collect(Collectors.toList()));
+
+        Map<String, List<CabinetCustomGroupItem>> groupedMap = groupItems.stream()
+            .collect(Collectors.groupingBy(CabinetCustomGroupItem::getGroupId, LinkedHashMap::new, Collectors.toList()));
+        Set<String> groupIds = groups.stream().map(CabinetCustomGroup::getId).collect(Collectors.toSet());
+        List<CabinetCustomGroupStateVO.CabinetCustomGroupBindingVO> bindings = new ArrayList<>();
+        for (CabinetCustomGroup group : groups) {
+            List<String> itemIds = groupedMap.getOrDefault(group.getId(), Collections.emptyList()).stream()
+                .map(CabinetCustomGroupItem::getItemId)
+                .distinct()
+                .collect(Collectors.toList());
+            CabinetCustomGroupStateVO.CabinetCustomGroupBindingVO bindingVO = new CabinetCustomGroupStateVO.CabinetCustomGroupBindingVO();
+            bindingVO.setGroupId(group.getId());
+            bindingVO.setItemIds(itemIds);
+            bindings.add(bindingVO);
+        }
+        result.setBindings(bindings);
+
+        Set<String> assignedItemIds = groupItems.stream()
+            .filter(item -> !CabinetConstant.CUSTOM_GROUP_UNGROUPED_ID.equals(item.getGroupId()))
+            .map(CabinetCustomGroupItem::getItemId)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<String> explicitUngroupedOrder = groupedMap.getOrDefault(CabinetConstant.CUSTOM_GROUP_UNGROUPED_ID, Collections.emptyList()).stream()
+            .map(CabinetCustomGroupItem::getItemId)
+            .filter(itemId -> !assignedItemIds.contains(itemId))
+            .distinct()
+            .collect(Collectors.toCollection(ArrayList::new));
+        Set<String> explicitUngroupedSet = new LinkedHashSet<>(explicitUngroupedOrder);
+        folderItems.stream()
+            .map(CabinetItem::getId)
+            .filter(itemId -> !assignedItemIds.contains(itemId))
+            .filter(itemId -> !explicitUngroupedSet.contains(itemId))
+            .forEach(explicitUngroupedOrder::add);
+        result.setUngroupedOrderItemIds(explicitUngroupedOrder);
+        return result;
+    }
+
+    protected CabinetCustomGroupStateVO.CabinetCustomGroupVO toCustomGroupVO(CabinetCustomGroup group) {
+        CabinetCustomGroupStateVO.CabinetCustomGroupVO vo = new CabinetCustomGroupStateVO.CabinetCustomGroupVO();
+        vo.setId(group.getId());
+        vo.setName(group.getGroupName());
+        vo.setSortNo(group.getSortNo());
+        return vo;
+    }
+
+    protected List<CabinetCustomGroup> normalizeCustomGroups(
+        List<CabinetCustomGroupStateDTO.CabinetCustomGroupDTO> groups,
+        String scope,
+        LoginUser loginUser,
+        Map<String, CabinetCustomGroup> existingGroupMap
+    ) {
+        List<CabinetCustomGroupStateDTO.CabinetCustomGroupDTO> source = groups == null ? Collections.emptyList() : groups;
+        List<CabinetCustomGroup> result = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        for (int index = 0; index < source.size(); index += 1) {
+            CabinetCustomGroupStateDTO.CabinetCustomGroupDTO item = source.get(index);
+            String groupName = requireName(item == null ? null : item.getName(), "分组名称不能为空");
+            if (!names.add(groupName)) {
+                throw new JeecgBootException("分组名称不能重复");
+            }
+            String groupId = trimToNull(item == null ? null : item.getId());
+            CabinetCustomGroup group = groupId == null ? null : existingGroupMap.get(groupId);
+            if (group == null) {
+                group = new CabinetCustomGroup();
+                group.setId(IdWorker.getIdStr());
+                group.setScope(scope);
+                group.setUserName(loginUser.getUsername());
+                group.setTenantId(resolvePreferenceTenantId());
+            }
+            group.setGroupName(groupName);
+            group.setSortNo((index + 1) * 10);
+            result.add(group);
+        }
+        return result;
+    }
+
+    protected void syncCustomGroups(
+        List<CabinetCustomGroup> existingGroups,
+        List<CabinetCustomGroup> nextGroups,
+        String scope,
+        LoginUser loginUser
+    ) {
+        Set<String> nextGroupIds = nextGroups.stream().map(CabinetCustomGroup::getId).collect(Collectors.toSet());
+        List<String> deletingGroupIds = existingGroups.stream()
+            .map(CabinetCustomGroup::getId)
+            .filter(groupId -> !nextGroupIds.contains(groupId))
+            .collect(Collectors.toList());
+        if (!deletingGroupIds.isEmpty()) {
+            cabinetCustomGroupItemMapper.delete(
+                new LambdaQueryWrapper<CabinetCustomGroupItem>()
+                    .eq(CabinetCustomGroupItem::getScope, scope)
+                    .eq(CabinetCustomGroupItem::getUserName, loginUser.getUsername())
+                    .eq(CabinetCustomGroupItem::getTenantId, resolvePreferenceTenantId())
+                    .in(CabinetCustomGroupItem::getGroupId, deletingGroupIds)
+            );
+            cabinetCustomGroupMapper.deleteBatchIds(deletingGroupIds);
+        }
+
+        for (CabinetCustomGroup group : nextGroups) {
+            if (oConvertUtils.isEmpty(group.getId()) || cabinetCustomGroupMapper.selectById(group.getId()) == null) {
+                cabinetCustomGroupMapper.insert(group);
+            } else {
+                cabinetCustomGroupMapper.updateById(group);
+            }
+        }
+    }
+
+    protected void replaceCurrentFolderCustomGroupItems(
+        String scope,
+        LoginUser loginUser,
+        Set<String> folderItemIdSet,
+        CabinetCustomGroupStateDTO request,
+        List<CabinetCustomGroup> nextGroups
+    ) {
+        if (!folderItemIdSet.isEmpty()) {
+            cabinetCustomGroupItemMapper.delete(
+                new LambdaQueryWrapper<CabinetCustomGroupItem>()
+                    .eq(CabinetCustomGroupItem::getScope, scope)
+                    .eq(CabinetCustomGroupItem::getUserName, loginUser.getUsername())
+                    .eq(CabinetCustomGroupItem::getTenantId, resolvePreferenceTenantId())
+                    .in(CabinetCustomGroupItem::getItemId, folderItemIdSet)
+            );
+        }
+
+        Map<String, CabinetCustomGroup> validGroupMap = nextGroups.stream()
+            .collect(Collectors.toMap(CabinetCustomGroup::getId, group -> group));
+        Set<String> assignedItemIds = new LinkedHashSet<>();
+        List<CabinetCustomGroupStateDTO.CabinetCustomGroupBindingDTO> bindings =
+            request.getBindings() == null ? Collections.emptyList() : request.getBindings();
+        for (CabinetCustomGroupStateDTO.CabinetCustomGroupBindingDTO binding : bindings) {
+            String groupId = trimToNull(binding == null ? null : binding.getGroupId());
+            if (groupId == null || !validGroupMap.containsKey(groupId)) {
+                continue;
+            }
+            List<String> itemIds = binding.getItemIds() == null ? Collections.emptyList() : binding.getItemIds();
+            int sortNo = 10;
+            for (String itemId : itemIds.stream().map(this::trimToNull).filter(Objects::nonNull).distinct().collect(Collectors.toList())) {
+                if (!folderItemIdSet.contains(itemId)) {
+                    continue;
+                }
+                CabinetCustomGroupItem relation = new CabinetCustomGroupItem();
+                relation.setId(IdWorker.getIdStr());
+                relation.setScope(scope);
+                relation.setUserName(loginUser.getUsername());
+                relation.setTenantId(resolvePreferenceTenantId());
+                relation.setGroupId(groupId);
+                relation.setItemId(itemId);
+                relation.setSortNo(sortNo);
+                cabinetCustomGroupItemMapper.insert(relation);
+                sortNo += 10;
+                assignedItemIds.add(itemId);
+            }
+        }
+
+        List<String> ungroupedOrderItemIds = request.getUngroupedOrderItemIds() == null
+            ? Collections.emptyList()
+            : request.getUngroupedOrderItemIds().stream()
+                .map(this::trimToNull)
+                .filter(Objects::nonNull)
+                .distinct()
+                .filter(folderItemIdSet::contains)
+                .filter(itemId -> !assignedItemIds.contains(itemId))
+                .collect(Collectors.toList());
+        int sortNo = 10;
+        for (String itemId : ungroupedOrderItemIds) {
+            CabinetCustomGroupItem relation = new CabinetCustomGroupItem();
+            relation.setId(IdWorker.getIdStr());
+            relation.setScope(scope);
+            relation.setUserName(loginUser.getUsername());
+            relation.setTenantId(resolvePreferenceTenantId());
+            relation.setGroupId(CabinetConstant.CUSTOM_GROUP_UNGROUPED_ID);
+            relation.setItemId(itemId);
+            relation.setSortNo(sortNo);
+            cabinetCustomGroupItemMapper.insert(relation);
+            sortNo += 10;
+        }
     }
 
     protected void refreshParentHasChild(String parentId) {
@@ -1108,7 +1385,7 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
     }
 
     protected List<CabinetGroupSectionVO> buildGroupSections(List<CabinetItemVO> items, String groupField) {
-        if ("none".equals(groupField)) {
+        if ("none".equals(groupField) || CabinetConstant.GROUP_FIELD_CUSTOM.equals(groupField)) {
             CabinetGroupSectionVO section = new CabinetGroupSectionVO();
             section.setKey("all");
             section.setTitle("");
@@ -1162,6 +1439,8 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
 
     protected String resolveGroupTitle(CabinetItemVO item, String groupField) {
         switch (groupField) {
+            case "custom":
+                return "";
             case "type":
                 return CabinetConstant.ITEM_TYPE_FOLDER.equals(item.getItemType()) ? "文件夹" : "文件";
             case "name":
@@ -1233,6 +1512,7 @@ public class CabinetServiceImpl extends ServiceImpl<CabinetItemMapper, CabinetIt
             case "updateTime":
             case "type":
             case "size":
+            case "custom":
                 return normalized;
             default:
                 throw new JeecgBootException("不支持的分组字段: " + groupField);
