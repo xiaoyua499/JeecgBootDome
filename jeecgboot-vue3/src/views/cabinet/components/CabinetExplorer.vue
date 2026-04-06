@@ -106,6 +106,7 @@ interface Props {
 }
 
 const CUSTOM_GROUP_STORAGE_KEY_PREFIX = 'cabinet-custom-groups';
+const CUSTOM_GROUP_PREFERENCE_KEY_PREFIX = 'cabinet-custom-group-preference';
 const UNGROUPED_CUSTOM_GROUP_KEY = '__ungrouped__';
 
 const props = withDefaults(defineProps<Props>(), {
@@ -228,6 +229,7 @@ const cloneCustomGroupAssignments = (assignments: Record<string, string[]>) =>
   Object.fromEntries(Object.entries(assignments).map(([fileId, groupIds]) => [fileId, [...groupIds]]));
 
 const getCustomGroupStorageKey = () => `${CUSTOM_GROUP_STORAGE_KEY_PREFIX}:${props.scope}`;
+const getCustomGroupPreferenceKey = () => `${CUSTOM_GROUP_PREFERENCE_KEY_PREFIX}:${props.scope}`;
 
 const loadCustomGroupState = () => {
   try {
@@ -270,6 +272,12 @@ const persistCustomGroupState = () => {
   );
 };
 
+const readCustomGroupPreference = () => localStorage.getItem(getCustomGroupPreferenceKey()) === '1';
+
+const persistCustomGroupPreference = (enabled: boolean) => {
+  localStorage.setItem(getCustomGroupPreferenceKey(), enabled ? '1' : '0');
+};
+
 const resolveFolderViewGroupField = (): Exclude<GroupField, 'custom'> =>
   groupField.value === 'custom' ? 'none' : groupField.value;
 
@@ -284,11 +292,12 @@ const loadViewPreference = async () => {
     gridIconSize: result.gridIconSize,
     sortField: result.sortField,
     sortOrder: result.sortOrder,
-    groupField: result.groupField,
+    groupField: readCustomGroupPreference() ? 'custom' : result.groupField,
   });
 };
 
 const persistViewPreference = async () => {
+  persistCustomGroupPreference(groupField.value === 'custom');
   await updateCabinetPreference({
     scope: props.scope,
     viewMode: viewMode.value,
@@ -643,9 +652,9 @@ const activeCustomGroupList = computed(() => (isEditingCustomGroups.value ? draf
 const activeCustomGroupAssignments = computed(() =>
   isEditingCustomGroups.value ? draftCustomGroupAssignments.value : customGroupAssignments.value,
 );
-const customGroupsEmpty = computed(() => isCustomGroupMode.value && activeCustomGroupList.value.length === 0);
+const customGroupsEmpty = computed(() => false);
 const customGroupSections = computed<CustomGroupSection[]>(() => {
-  if (!isCustomGroupMode.value || activeCustomGroupList.value.length === 0) {
+  if (!isCustomGroupMode.value) {
     return [];
   }
   const sections: CustomGroupSection[] = activeCustomGroupList.value.map((group) => ({
@@ -979,7 +988,7 @@ const handleGroupFieldChange = (field: GroupField) => {
     groupField.value = 'custom';
     hideContextMenu();
     clearSelection();
-    void syncFolderView({ showError: true });
+    void savePreferenceAndSyncFolderView({ groupField: field }, { showError: true });
     return;
   }
   if (groupField.value === 'custom') {
