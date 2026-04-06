@@ -795,6 +795,9 @@ const activeCustomGroupOrders = computed(() =>
 );
 const customGroupsEmpty = computed(() => false);
 const sortItemsByCustomGroupOrder = (groupId: string, items: CabinetItem[]) => {
+  if (sortField.value !== 'manual') {
+    return items;
+  }
   const orderIds = activeCustomGroupOrders.value[groupId] || [];
   if (!orderIds.length) {
     return items;
@@ -838,7 +841,7 @@ const customGroupSections = computed<CustomGroupSection[]>(() => {
 });
 
 const handleCustomGroupSortChange = (groupId: string, nextItems: CabinetItem[]) => {
-  if (isEditingCustomGroups.value) {
+  if (isEditingCustomGroups.value || sortField.value !== 'manual') {
     return;
   }
   replaceCustomGroupOrder(groupId, nextItems.map((item) => item.id));
