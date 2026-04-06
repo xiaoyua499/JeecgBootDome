@@ -55,6 +55,7 @@
               item-key="id"
               :sort="false"
               :group="resolveCustomDragGroup(group.isUngrouped)"
+              :disabled="!isEditingCustomGroups"
               ghost-class="file-drag-ghost"
               chosen-class="file-drag-chosen"
               drag-class="file-drag-active"
@@ -80,7 +81,7 @@
                     @contextmenu="emit('item-contextmenu', element, $event)"
                   />
                   <button
-                    v-if="!group.isUngrouped"
+                    v-if="isEditingCustomGroups && !group.isUngrouped"
                     class="custom-group-remove"
                     type="button"
                     title="移出当前分组"
@@ -135,31 +136,41 @@
               </div>
             </div>
             <div v-if="group.items.length === 0" class="custom-group-empty-slot custom-group-empty-slot-table">
-              {{ group.isUngrouped ? '暂无未分组项目' : '该分组暂无项目，可切换到图标视图拖动到这里' }}
+              {{ group.isUngrouped ? '暂无未分组项目' : '该分组暂无项目，可直接拖动项目到这里' }}
             </div>
-            <div v-for="item in group.items" :key="item.id" class="grouped-table-row"
-              :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
-              @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
-              @contextmenu.prevent="emit('item-contextmenu', item, $event)">
-              <div class="grouped-cell col-name">
-                <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name"
-                  style="margin-right: 10px;" draggable="false" />
-                <span class="grouped-file-name">{{ item.name }}</span>
-                <a-button
-                  v-if="!group.isUngrouped"
-                  type="link"
-                  size="small"
-                  class="custom-table-remove"
-                  @click.stop="emit('remove-file-from-custom-group', item.id, group.key)"
-                >
-                  移出分组
-                </a-button>
-              </div>
-              <div class="grouped-cell col-create-date">{{ item.createTime }}</div>
-              <div class="grouped-cell col-update-date">{{ item.updateTime }}</div>
-              <div class="grouped-cell col-type">{{ resolveTypeLabel(item) }}</div>
-              <div class="grouped-cell col-size">{{ item.type === 'folder' ? '-' : item.size }}</div>
-            </div>
+            <Draggable
+              class="custom-table-draggable"
+              :model-value="group.items"
+              item-key="id"
+              :sort="false"
+              :group="resolveCustomDragGroup(group.isUngrouped)"
+              :disabled="!isEditingCustomGroups"
+              ghost-class="file-drag-ghost"
+              chosen-class="file-drag-chosen"
+              drag-class="file-drag-active"
+              :animation="180"
+              @start="handleCustomGroupDragStart(group.key, $event)"
+              @end="emit('custom-group-drag-end')"
+              @add="handleCustomGroupAdd(group.key, group.isUngrouped, $event)"
+            >
+              <template #item="{ element: item }">
+                <div class="grouped-table-row"
+                  :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
+                  :data-file-id="item.id"
+                  @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
+                  @contextmenu.prevent="emit('item-contextmenu', item, $event)">
+                  <div class="grouped-cell col-name">
+                    <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name"
+                      style="margin-right: 10px;" draggable="false" />
+                    <span class="grouped-file-name">{{ item.name }}</span>
+                  </div>
+                  <div class="grouped-cell col-create-date">{{ item.createTime }}</div>
+                  <div class="grouped-cell col-update-date">{{ item.updateTime }}</div>
+                  <div class="grouped-cell col-type">{{ resolveTypeLabel(item) }}</div>
+                  <div class="grouped-cell col-size">{{ item.type === 'folder' ? '-' : item.size }}</div>
+                </div>
+              </template>
+            </Draggable>
           </div>
         </div>
       </div>
@@ -814,9 +825,8 @@ const handleCustomGroupDrop = (groupId: string, isUngrouped?: boolean) => {
   min-height: 64px;
 }
 
-.custom-table-remove {
-  margin-left: auto;
-  padding-right: 0;
+.custom-table-draggable {
+  display: block;
 }
 
 .grid-panel {
