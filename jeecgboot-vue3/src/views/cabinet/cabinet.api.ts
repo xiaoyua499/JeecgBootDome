@@ -10,6 +10,7 @@ enum Api {
   bootstrap = '/sys/cabinet/bootstrap',
   folderView = '/sys/cabinet/folder-view',
   preference = '/sys/cabinet/preference',
+  customGroupState = '/sys/cabinet/custom-group-state',
   folder = '/sys/cabinet/folder',
   file = '/sys/cabinet/file',
   rename = '/sys/cabinet/rename',
@@ -73,6 +74,25 @@ export interface CabinetPreferenceDTO {
   groupField: GroupField;
   viewMode: ViewMode;
   gridIconSize: GridIconSize;
+}
+
+export interface CabinetCustomGroupDTO {
+  id: string;
+  name: string;
+  sortNo?: number;
+}
+
+export interface CabinetCustomGroupBindingDTO {
+  groupId: string;
+  itemIds: string[];
+}
+
+export interface CabinetCustomGroupStateDTO {
+  scope: CabinetScope;
+  parentId: string | null;
+  groups: CabinetCustomGroupDTO[];
+  bindings: CabinetCustomGroupBindingDTO[];
+  ungroupedOrderItemIds: string[];
 }
 
 interface CabinetScopedParentPayload {
@@ -158,6 +178,24 @@ export const fetchCabinetPreference = (scope: CabinetScope) =>
 
 export const updateCabinetPreference = (payload: CabinetPreferenceDTO) =>
   defHttp.put<CabinetPreferenceDTO>({ url: Api.preference, params: payload });
+
+export const fetchCabinetCustomGroupState = (scope: CabinetScope, parentId: string | null) =>
+  defHttp.get<CabinetCustomGroupStateDTO>({
+    url: Api.customGroupState,
+    params: {
+      scope,
+      parentId: normalizeParentId(parentId),
+    },
+  });
+
+export const updateCabinetCustomGroupState = (payload: CabinetCustomGroupStateDTO) =>
+  defHttp.put<CabinetCustomGroupStateDTO>({
+    url: Api.customGroupState,
+    params: {
+      ...payload,
+      parentId: normalizeParentId(payload.parentId),
+    },
+  });
 
 export const createCabinetFolder = (payload: CabinetCreateFolderPayload, options?: CabinetRequestOptions) =>
   defHttp.post<CabinetBootstrapItemDTO>({

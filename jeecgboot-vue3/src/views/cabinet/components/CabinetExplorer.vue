@@ -76,11 +76,13 @@ import {
   createCabinetFile,
   createCabinetFolder,
   deleteCabinetItems,
+  fetchCabinetCustomGroupState,
   fetchCabinetFolderView,
   fetchCabinetPreference,
   moveCabinetItems,
   renameCabinetItem,
   updateCabinetIcon,
+  updateCabinetCustomGroupState,
   updateCabinetItemOrder,
   updateCabinetPreference,
   uploadCabinetBinary,
@@ -107,7 +109,6 @@ interface Props {
   scope?: CabinetScope;
 }
 
-const CUSTOM_GROUP_STORAGE_KEY_PREFIX = 'cabinet-custom-groups';
 const CUSTOM_GROUP_PREFERENCE_KEY_PREFIX = 'cabinet-custom-group-preference';
 const UNGROUPED_CUSTOM_GROUP_KEY = '__ungrouped__';
 
@@ -239,44 +240,56 @@ const cloneCustomGroupOrders = (orders: Record<string, string[]>) =>
 
 const getCustomGroupUserKey = () => userStore.getUserInfo?.username || userStore.getUserInfo?.id || 'anonymous';
 
-const getCustomGroupStorageKey = () => `${CUSTOM_GROUP_STORAGE_KEY_PREFIX}:${props.scope}:${getCustomGroupUserKey()}`;
 const getCustomGroupPreferenceKey = () => `${CUSTOM_GROUP_PREFERENCE_KEY_PREFIX}:${props.scope}:${getCustomGroupUserKey()}`;
 
-const loadCustomGroupState = () => {
+const applyCustomGroupState = (payload?: {
+  groups?: Array<{ id?: string; name?: string }>;
+  bindings?: Array<{ groupId?: string; itemIds?: string[] }>;
+  ungroupedOrderItemIds?: string[];
+}) => {
+  customGroupList.value = Array.isArray(payload?.groups)
+    ? payload!.groups
+        .map((group) => ({ id: String(group.id || ''), name: String(group.name || '').trim() }))
+        .filter((group) => group.id && group.name)
+    : [];
+  customGroupAssignments.value = {};
+  customGroupOrders.value = {};
+
+  if (Array.isArray(payload?.bindings)) {
+    const nextAssignments: Record<string, string[]> = {};
+    const nextOrders: Record<string, string[]> = {};
+    payload!.bindings.forEach((binding) => {
+      const groupId = String(binding.groupId || '').trim();
+      if (!groupId) {
+        return;
+      }
+      const itemIds = Array.isArray(binding.itemIds) ? binding.itemIds.map(String).filter(Boolean) : [];
+      nextOrders[groupId] = Array.from(new Set(itemIds));
+      itemIds.forEach((itemId) => {
+        if (!nextAssignments[itemId]) {
+          nextAssignments[itemId] = [];
+        }
+        if (!nextAssignments[itemId].includes(groupId)) {
+          nextAssignments[itemId].push(groupId);
+        }
+      });
+    });
+    customGroupAssignments.value = nextAssignments;
+    customGroupOrders.value = nextOrders;
+  }
+
+  const ungroupedOrder = Array.isArray(payload?.ungroupedOrderItemIds)
+    ? payload!.ungroupedOrderItemIds.map(String).filter(Boolean)
+    : [];
+  if (ungroupedOrder.length) {
+    customGroupOrders.value[UNGROUPED_CUSTOM_GROUP_KEY] = Array.from(new Set(ungroupedOrder));
+  }
+};
+
+const loadCustomGroupState = async () => {
   try {
-    const raw = localStorage.getItem(getCustomGroupStorageKey());
-    if (!raw) {
-      customGroupList.value = [];
-      customGroupAssignments.value = {};
-      customGroupOrders.value = {};
-      return;
-    }
-    const parsed = JSON.parse(raw) as {
-      groups?: CustomGroupItem[];
-      assignments?: Record<string, string[]>;
-      orders?: Record<string, string[]>;
-    };
-    customGroupList.value = Array.isArray(parsed?.groups)
-      ? parsed.groups
-          .map((group) => ({ id: String(group.id || ''), name: String(group.name || '').trim() }))
-          .filter((group) => group.id && group.name)
-      : [];
-    customGroupAssignments.value = parsed?.assignments && typeof parsed.assignments === 'object'
-      ? Object.fromEntries(
-          Object.entries(parsed.assignments).map(([fileId, groupIds]) => [
-            fileId,
-            Array.isArray(groupIds) ? groupIds.map(String) : [],
-          ]),
-        )
-      : {};
-    customGroupOrders.value = parsed?.orders && typeof parsed.orders === 'object'
-      ? Object.fromEntries(
-          Object.entries(parsed.orders).map(([groupId, itemIds]) => [
-            groupId,
-            Array.isArray(itemIds) ? itemIds.map(String) : [],
-          ]),
-        )
-      : {};
+    const result = await fetchCabinetCustomGroupState(props.scope, resolveApiParentId(currentFolderId.value));
+    applyCustomGroupState(result);
   } catch (error) {
     customGroupList.value = [];
     customGroupAssignments.value = {};
@@ -284,15 +297,49 @@ const loadCustomGroupState = () => {
   }
 };
 
-const persistCustomGroupState = () => {
-  localStorage.setItem(
-    getCustomGroupStorageKey(),
-    JSON.stringify({
-      groups: customGroupList.value,
-      assignments: customGroupAssignments.value,
-      orders: customGroupOrders.value,
-    }),
-  );
+const persistCustomGroupState = async () => {
+  const normalizedGroups = customGroupList.value
+    .map((group, index) => ({
+      id: group.id,
+      name: group.name.trim(),
+      sortNo: (index + 1) * 10,
+    }))
+    .filter((group) => group.id && group.name);
+  const validGroupIdSet = new Set(normalizedGroups.map((group) => group.id));
+  const bindings = normalizedGroups.map((group) => ({
+    groupId: group.id,
+    itemIds: Array.from(
+      new Set(
+        (customGroupOrders.value[group.id] || []).filter((itemId) =>
+          (customGroupAssignments.value[itemId] || []).includes(group.id),
+        ),
+      ),
+    ),
+  }));
+  Object.entries(customGroupAssignments.value).forEach(([itemId, groupIds]) => {
+    groupIds.filter((groupId) => validGroupIdSet.has(groupId)).forEach((groupId) => {
+      const target = bindings.find((binding) => binding.groupId === groupId);
+      if (target && !target.itemIds.includes(itemId)) {
+        target.itemIds.push(itemId);
+      }
+    });
+  });
+  const currentFolderItemIds = currentFolderPageItems.value.map((item) => item.id);
+  const boundItemIds = new Set(bindings.flatMap((binding) => binding.itemIds));
+  const ungroupedOrderItemIds = Array.from(
+    new Set([
+      ...(customGroupOrders.value[UNGROUPED_CUSTOM_GROUP_KEY] || []),
+      ...currentFolderItemIds.filter((itemId) => !boundItemIds.has(itemId)),
+    ]),
+  ).filter((itemId) => currentFolderItemIds.includes(itemId) && !boundItemIds.has(itemId));
+
+  await updateCabinetCustomGroupState({
+    scope: props.scope,
+    parentId: resolveApiParentId(currentFolderId.value),
+    groups: normalizedGroups,
+    bindings,
+    ungroupedOrderItemIds,
+  });
 };
 
 const readCustomGroupPreference = () => localStorage.getItem(getCustomGroupPreferenceKey()) === '1';
@@ -434,6 +481,7 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
     hideContextMenu();
     clearSelection();
     await syncFolderView();
+    await loadCustomGroupState();
 
     if (activePropertyItemId) {
       propertyItem.value = itemList.value.find((item) => item.id === activePropertyItemId) || null;
@@ -456,7 +504,6 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
 };
 
 const initializeCabinet = async () => {
-  loadCustomGroupState();
   try {
     await loadViewPreference();
   } catch (error) { }
@@ -493,7 +540,7 @@ const updateActiveCustomGroupAssignments = (nextAssignments: Record<string, stri
     return;
   }
   customGroupAssignments.value = nextAssignments;
-  persistCustomGroupState();
+  void persistCustomGroupState();
 };
 
 const updateActiveCustomGroupOrders = (nextOrders: Record<string, string[]>) => {
@@ -502,7 +549,7 @@ const updateActiveCustomGroupOrders = (nextOrders: Record<string, string[]>) => 
     return;
   }
   customGroupOrders.value = nextOrders;
-  persistCustomGroupState();
+  void persistCustomGroupState();
 };
 
 const appendItemToCustomGroupOrder = (groupId: string, fileId: string) => {
@@ -669,9 +716,16 @@ const handleSaveCustomGroups = () => {
       .map(([groupId, itemIds]) => [groupId, Array.from(new Set(itemIds))])
       .filter(([, itemIds]) => itemIds.length),
   );
-  persistCustomGroupState();
-  cancelCustomGroupEditMode();
-  message.success('分组已保存');
+  void (async () => {
+    try {
+      await persistCustomGroupState();
+      cancelCustomGroupEditMode();
+      await loadCustomGroupState();
+      message.success('分组已保存');
+    } catch (error) {
+      message.error('分组保存失败');
+    }
+  })();
 };
 
 const handleCustomGroupDragStart = (_groupId: string, fileId: string) => {
@@ -1048,7 +1102,10 @@ const enterFolderById = (folderId: string) => {
   selectedTreeKeys.value = [folderId];
   clearSelection();
   hideContextMenu();
-  void syncFolderView({ showError: true });
+  void (async () => {
+    await syncFolderView({ showError: true });
+    await loadCustomGroupState();
+  })();
 };
 
 const handleTreeSelect = (keys: Array<string | number>) => {
