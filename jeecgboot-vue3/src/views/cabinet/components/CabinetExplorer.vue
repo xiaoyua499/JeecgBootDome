@@ -48,6 +48,7 @@
         @custom-group-drag-end="handleCustomGroupDragEnd" @custom-group-drag-enter="handleCustomGroupDragEnter"
         @custom-group-drag-over="handleCustomGroupDragOver" @custom-group-drag-leave="handleCustomGroupDragLeave"
         @custom-group-drop="handleCustomGroupDrop" @custom-group-add-file="handleCustomGroupAddFile"
+        @custom-group-sort-change="handleCustomGroupSortChange"
         @remove-file-from-custom-group="handleRemoveFileFromCustomGroup"
         @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop"
         @page-change="handlePageChange" />
@@ -127,8 +128,10 @@ const sortOrder = ref<SortOrder>('asc');
 const groupField = ref<GroupField>('none');
 const customGroupList = ref<CustomGroupItem[]>([]);
 const customGroupAssignments = ref<Record<string, string[]>>({});
+const customGroupOrders = ref<Record<string, string[]>>({});
 const draftCustomGroupList = ref<CustomGroupItem[]>([]);
 const draftCustomGroupAssignments = ref<Record<string, string[]>>({});
+const draftCustomGroupOrders = ref<Record<string, string[]>>({});
 const isEditingCustomGroups = ref(false);
 const editingCustomGroupId = ref('');
 const editingCustomGroupName = ref('');
@@ -231,6 +234,9 @@ const cloneCustomGroupList = (groups: CustomGroupItem[]) => groups.map((group) =
 const cloneCustomGroupAssignments = (assignments: Record<string, string[]>) =>
   Object.fromEntries(Object.entries(assignments).map(([fileId, groupIds]) => [fileId, [...groupIds]]));
 
+const cloneCustomGroupOrders = (orders: Record<string, string[]>) =>
+  Object.fromEntries(Object.entries(orders).map(([groupId, itemIds]) => [groupId, [...itemIds]]));
+
 const getCustomGroupUserKey = () => userStore.getUserInfo?.username || userStore.getUserInfo?.id || 'anonymous';
 
 const getCustomGroupStorageKey = () => `${CUSTOM_GROUP_STORAGE_KEY_PREFIX}:${props.scope}:${getCustomGroupUserKey()}`;
@@ -242,11 +248,13 @@ const loadCustomGroupState = () => {
     if (!raw) {
       customGroupList.value = [];
       customGroupAssignments.value = {};
+      customGroupOrders.value = {};
       return;
     }
     const parsed = JSON.parse(raw) as {
       groups?: CustomGroupItem[];
       assignments?: Record<string, string[]>;
+      orders?: Record<string, string[]>;
     };
     customGroupList.value = Array.isArray(parsed?.groups)
       ? parsed.groups
@@ -261,9 +269,18 @@ const loadCustomGroupState = () => {
           ]),
         )
       : {};
+    customGroupOrders.value = parsed?.orders && typeof parsed.orders === 'object'
+      ? Object.fromEntries(
+          Object.entries(parsed.orders).map(([groupId, itemIds]) => [
+            groupId,
+            Array.isArray(itemIds) ? itemIds.map(String) : [],
+          ]),
+        )
+      : {};
   } catch (error) {
     customGroupList.value = [];
     customGroupAssignments.value = {};
+    customGroupOrders.value = {};
   }
 };
 
@@ -273,6 +290,7 @@ const persistCustomGroupState = () => {
     JSON.stringify({
       groups: customGroupList.value,
       assignments: customGroupAssignments.value,
+      orders: customGroupOrders.value,
     }),
   );
 };
@@ -478,6 +496,43 @@ const updateActiveCustomGroupAssignments = (nextAssignments: Record<string, stri
   persistCustomGroupState();
 };
 
+const updateActiveCustomGroupOrders = (nextOrders: Record<string, string[]>) => {
+  if (isEditingCustomGroups.value) {
+    draftCustomGroupOrders.value = nextOrders;
+    return;
+  }
+  customGroupOrders.value = nextOrders;
+  persistCustomGroupState();
+};
+
+const appendItemToCustomGroupOrder = (groupId: string, fileId: string) => {
+  const nextOrders = cloneCustomGroupOrders(
+    isEditingCustomGroups.value ? draftCustomGroupOrders.value : customGroupOrders.value,
+  );
+  const previous = (nextOrders[groupId] || []).filter((id) => id !== fileId);
+  nextOrders[groupId] = [...previous, fileId];
+  updateActiveCustomGroupOrders(nextOrders);
+};
+
+const removeItemFromCustomGroupOrder = (groupId: string, fileId: string) => {
+  const nextOrders = cloneCustomGroupOrders(
+    isEditingCustomGroups.value ? draftCustomGroupOrders.value : customGroupOrders.value,
+  );
+  nextOrders[groupId] = (nextOrders[groupId] || []).filter((id) => id !== fileId);
+  if (!nextOrders[groupId].length) {
+    delete nextOrders[groupId];
+  }
+  updateActiveCustomGroupOrders(nextOrders);
+};
+
+const replaceCustomGroupOrder = (groupId: string, itemIds: string[]) => {
+  const nextOrders = cloneCustomGroupOrders(
+    isEditingCustomGroups.value ? draftCustomGroupOrders.value : customGroupOrders.value,
+  );
+  nextOrders[groupId] = [...itemIds];
+  updateActiveCustomGroupOrders(nextOrders);
+};
+
 const addFileToCustomGroup = (fileId: string, groupId: string) => {
   if (!fileId || !groupId || groupId === UNGROUPED_CUSTOM_GROUP_KEY) {
     return;
@@ -485,10 +540,12 @@ const addFileToCustomGroup = (fileId: string, groupId: string) => {
   const nextAssignments = cloneCustomGroupAssignments(activeCustomGroupAssignments.value);
   const previous = nextAssignments[fileId] || [];
   if (previous.includes(groupId)) {
+    appendItemToCustomGroupOrder(groupId, fileId);
     return;
   }
   nextAssignments[fileId] = [...previous, groupId];
   updateActiveCustomGroupAssignments(nextAssignments);
+  appendItemToCustomGroupOrder(groupId, fileId);
   message.success('已加入分组');
 };
 
@@ -500,11 +557,13 @@ const removeFileFromCustomGroupMapping = (fileId: string, groupId: string) => {
     delete nextAssignments[fileId];
   }
   updateActiveCustomGroupAssignments(nextAssignments);
+  removeItemFromCustomGroupOrder(groupId, fileId);
 };
 
 const enterCustomGroupEditMode = () => {
   draftCustomGroupList.value = cloneCustomGroupList(customGroupList.value);
   draftCustomGroupAssignments.value = cloneCustomGroupAssignments(customGroupAssignments.value);
+  draftCustomGroupOrders.value = cloneCustomGroupOrders(customGroupOrders.value);
   isEditingCustomGroups.value = true;
   editingCustomGroupId.value = '';
   editingCustomGroupName.value = '';
@@ -514,6 +573,7 @@ const cancelCustomGroupEditMode = () => {
   isEditingCustomGroups.value = false;
   draftCustomGroupList.value = [];
   draftCustomGroupAssignments.value = {};
+  draftCustomGroupOrders.value = {};
   editingCustomGroupId.value = '';
   editingCustomGroupName.value = '';
 };
@@ -581,6 +641,9 @@ const handleDeleteCustomGroup = (groupId: string) => {
         }
       });
       draftCustomGroupAssignments.value = nextAssignments;
+      const nextOrders = cloneCustomGroupOrders(draftCustomGroupOrders.value);
+      delete nextOrders[groupId];
+      draftCustomGroupOrders.value = nextOrders;
       if (editingCustomGroupId.value === groupId) {
         editingCustomGroupId.value = '';
         editingCustomGroupName.value = '';
@@ -599,6 +662,12 @@ const handleSaveCustomGroups = () => {
     Object.entries(draftCustomGroupAssignments.value)
       .map(([fileId, groupIds]) => [fileId, groupIds.filter((groupId) => validGroupIdSet.has(groupId))])
       .filter(([, groupIds]) => groupIds.length),
+  );
+  customGroupOrders.value = Object.fromEntries(
+    Object.entries(draftCustomGroupOrders.value)
+      .filter(([groupId]) => groupId === UNGROUPED_CUSTOM_GROUP_KEY || validGroupIdSet.has(groupId))
+      .map(([groupId, itemIds]) => [groupId, Array.from(new Set(itemIds))])
+      .filter(([, itemIds]) => itemIds.length),
   );
   persistCustomGroupState();
   cancelCustomGroupEditMode();
@@ -649,6 +718,7 @@ const handleCustomGroupAddFile = (groupId: string, fileId: string) => {
   if (groupId === UNGROUPED_CUSTOM_GROUP_KEY) {
     if (customGroupDragSourceGroupId.value && customGroupDragSourceGroupId.value !== UNGROUPED_CUSTOM_GROUP_KEY) {
       removeFileFromCustomGroupMapping(fileId, customGroupDragSourceGroupId.value);
+      appendItemToCustomGroupOrder(UNGROUPED_CUSTOM_GROUP_KEY, fileId);
       message.success('已移回未分组');
     }
     return;
@@ -666,7 +736,25 @@ const activeCustomGroupList = computed(() => (isEditingCustomGroups.value ? draf
 const activeCustomGroupAssignments = computed(() =>
   isEditingCustomGroups.value ? draftCustomGroupAssignments.value : customGroupAssignments.value,
 );
+const activeCustomGroupOrders = computed(() =>
+  isEditingCustomGroups.value ? draftCustomGroupOrders.value : customGroupOrders.value,
+);
 const customGroupsEmpty = computed(() => false);
+const sortItemsByCustomGroupOrder = (groupId: string, items: CabinetItem[]) => {
+  const orderIds = activeCustomGroupOrders.value[groupId] || [];
+  if (!orderIds.length) {
+    return items;
+  }
+  const orderIndexMap = new Map(orderIds.map((id, index) => [id, index]));
+  return [...items].sort((left, right) => {
+    const leftIndex = orderIndexMap.has(left.id) ? orderIndexMap.get(left.id)! : Number.MAX_SAFE_INTEGER;
+    const rightIndex = orderIndexMap.has(right.id) ? orderIndexMap.get(right.id)! : Number.MAX_SAFE_INTEGER;
+    if (leftIndex === rightIndex) {
+      return 0;
+    }
+    return leftIndex - rightIndex;
+  });
+};
 const customGroupSections = computed<CustomGroupSection[]>(() => {
   if (!isCustomGroupMode.value) {
     return [];
@@ -674,20 +762,33 @@ const customGroupSections = computed<CustomGroupSection[]>(() => {
   const sections: CustomGroupSection[] = activeCustomGroupList.value.map((group) => ({
     key: group.id,
     title: group.name,
-    items: currentFolderGroupableItems.value.filter((item) => activeCustomGroupAssignments.value[item.id]?.includes(group.id)),
+    items: sortItemsByCustomGroupOrder(
+      group.id,
+      currentFolderGroupableItems.value.filter((item) => activeCustomGroupAssignments.value[item.id]?.includes(group.id)),
+    ),
   }));
   const activeGroupIdSet = new Set(activeCustomGroupList.value.map((group) => group.id));
   sections.push({
     key: UNGROUPED_CUSTOM_GROUP_KEY,
     title: '未分组',
     isUngrouped: true,
-    items: currentFolderGroupableItems.value.filter((item) => {
-      const groupIds = activeCustomGroupAssignments.value[item.id] || [];
-      return !groupIds.some((groupId) => activeGroupIdSet.has(groupId));
-    }),
+    items: sortItemsByCustomGroupOrder(
+      UNGROUPED_CUSTOM_GROUP_KEY,
+      currentFolderGroupableItems.value.filter((item) => {
+        const groupIds = activeCustomGroupAssignments.value[item.id] || [];
+        return !groupIds.some((groupId) => activeGroupIdSet.has(groupId));
+      }),
+    ),
   });
   return sections;
 });
+
+const handleCustomGroupSortChange = (groupId: string, nextItems: CabinetItem[]) => {
+  if (isEditingCustomGroups.value) {
+    return;
+  }
+  replaceCustomGroupOrder(groupId, nextItems.map((item) => item.id));
+};
 
 // 选择相关交互：单选、多选、框选、快捷键全选等。
 const {

@@ -53,8 +53,8 @@
               :class="[`size-${gridIconSize}`]"
               :model-value="group.items"
               item-key="id"
-              :sort="false"
-              :group="resolveCustomDragGroup(group.isUngrouped)"
+              :sort="!isEditingCustomGroups"
+              :group="resolveCustomDragGroup(group.key, group.isUngrouped)"
               ghost-class="file-drag-ghost"
               chosen-class="file-drag-chosen"
               drag-class="file-drag-active"
@@ -62,6 +62,7 @@
               @start="handleCustomGroupDragStart(group.key, $event)"
               @end="emit('custom-group-drag-end')"
               @add="handleCustomGroupAdd(group.key, group.isUngrouped, $event)"
+              @update:modelValue="emit('custom-group-sort-change', group.key, $event)"
             >
               <template #item="{ element }">
                 <div class="custom-group-item-wrap" :data-file-id="element.id">
@@ -141,8 +142,8 @@
               class="custom-table-draggable"
               :model-value="group.items"
               item-key="id"
-              :sort="false"
-              :group="resolveCustomDragGroup(group.isUngrouped)"
+              :sort="!isEditingCustomGroups"
+              :group="resolveCustomDragGroup(group.key, group.isUngrouped)"
               ghost-class="file-drag-ghost"
               chosen-class="file-drag-chosen"
               drag-class="file-drag-active"
@@ -150,6 +151,7 @@
               @start="handleCustomGroupDragStart(group.key, $event)"
               @end="emit('custom-group-drag-end')"
               @add="handleCustomGroupAdd(group.key, group.isUngrouped, $event)"
+              @update:modelValue="emit('custom-group-sort-change', group.key, $event)"
             >
               <template #item="{ element: item }">
                 <div class="grouped-table-row"
@@ -475,6 +477,7 @@ const emit = defineEmits<{
   (e: 'custom-group-drag-leave', groupId: string, event: DragEvent): void;
   (e: 'custom-group-drop', groupId: string): void;
   (e: 'custom-group-add-file', groupId: string, fileId: string): void;
+  (e: 'custom-group-sort-change', groupId: string, nextItems: CabinetItem[]): void;
   (e: 'remove-file-from-custom-group', fileId: string, groupId: string): void;
   (e: 'update:propertyModalVisible', value: boolean): void;
   (e: 'upload-drop', dataTransfer: DataTransfer): void;
@@ -591,11 +594,18 @@ const handlePaginationChange = (page: number, size: number) => {
   emit('page-change', page, size);
 };
 
-const resolveCustomDragGroup = (isUngrouped?: boolean) => ({
-  name: 'cabinet-custom-group',
-  pull: 'clone' as const,
-  put: true,
-});
+const resolveCustomDragGroup = (groupId: string, isUngrouped?: boolean) =>
+  props.isEditingCustomGroups
+    ? ({
+        name: 'cabinet-custom-group-edit',
+        pull: 'clone' as const,
+        put: true,
+      })
+    : ({
+        name: `cabinet-custom-sort-${groupId}`,
+        pull: true,
+        put: false,
+      });
 
 const handleCustomGroupDragStart = (
   groupId: string,
