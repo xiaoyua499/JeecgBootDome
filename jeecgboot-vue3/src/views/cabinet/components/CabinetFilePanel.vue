@@ -13,14 +13,8 @@
     <div class="cabinet-upload-zone" :class="{ 'is-drag-over': uploadDragOver }"
       @dragenter.prevent="handleUploadDragEnter" @dragleave="handleUploadDragLeave"
       @dragover.prevent="handleUploadDragOver" @drop.prevent="handleUploadDrop">
-      <div v-if="customGroupMode" class="custom-group-panel">
-        <a-empty
-          v-if="customGroupsEmpty"
-          description="暂无自定义分组，点击编辑分组后新增分组开始整理文件"
-          class="custom-group-empty"
-        />
-
-        <div v-else class="custom-group-list">
+      <div v-if="customGroupMode && viewMode === 'grid'" class="custom-group-panel">
+        <div class="custom-group-list">
           <div
             v-for="group in customGroupSections"
             :key="group.key"
@@ -103,6 +97,69 @@
                 </div>
               </template>
             </Draggable>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="customGroupMode" class="grouped-table">
+        <div class="grouped-table-header">
+          <div class="col-name">名称</div>
+          <div class="col-create-date">创建日期</div>
+          <div class="col-update-date">修改日期</div>
+          <div class="col-type">类型</div>
+          <div class="col-size">大小</div>
+        </div>
+        <div class="grouped-table-body">
+          <div v-for="group in customGroupSections" :key="group.key" class="grouped-table-section custom-table-section">
+            <div class="grouped-table-group-title custom-table-group-title">
+              <div class="custom-table-group-main">
+                <template v-if="isEditingCustomGroups && editingCustomGroupId === group.key && !group.isUngrouped">
+                  <a-input
+                    :value="editingCustomGroupName"
+                    class="custom-group-rename-input"
+                    size="small"
+                    @update:value="emit('update:editingCustomGroupName', $event)"
+                    @pressEnter="emit('submit-custom-group-rename')"
+                    @blur="emit('submit-custom-group-rename')"
+                  />
+                </template>
+                <template v-else>
+                  <span class="grouped-table-group-arrow">⌄</span>
+                  <span>{{ group.title }}</span>
+                </template>
+                <span class="custom-group-count">({{ group.items.length }})</span>
+              </div>
+              <div v-if="isEditingCustomGroups && !group.isUngrouped" class="custom-group-actions">
+                <a-button type="link" size="small" @click="emit('start-custom-group-rename', group.key)">重命名</a-button>
+                <a-button type="link" danger size="small" @click="emit('delete-custom-group', group.key)">删除</a-button>
+              </div>
+            </div>
+            <div v-if="group.items.length === 0" class="custom-group-empty-slot custom-group-empty-slot-table">
+              {{ group.isUngrouped ? '暂无未分组项目' : '该分组暂无项目，可切换到图标视图拖动到这里' }}
+            </div>
+            <div v-for="item in group.items" :key="item.id" class="grouped-table-row"
+              :class="{ selected: selectedIdSet.has(item.id), cutting: clipboardCutIdSet.has(item.id) }"
+              @click="emit('item-click', item.id, $event)" @dblclick="emit('open', item)"
+              @contextmenu.prevent="emit('item-contextmenu', item, $event)">
+              <div class="grouped-cell col-name">
+                <img class="table-icon" :src="resolveCabinetItemIconSrc(item)" :alt="item.name"
+                  style="margin-right: 10px;" draggable="false" />
+                <span class="grouped-file-name">{{ item.name }}</span>
+                <a-button
+                  v-if="!group.isUngrouped"
+                  type="link"
+                  size="small"
+                  class="custom-table-remove"
+                  @click.stop="emit('remove-file-from-custom-group', item.id, group.key)"
+                >
+                  移出分组
+                </a-button>
+              </div>
+              <div class="grouped-cell col-create-date">{{ item.createTime }}</div>
+              <div class="grouped-cell col-update-date">{{ item.updateTime }}</div>
+              <div class="grouped-cell col-type">{{ resolveTypeLabel(item) }}</div>
+              <div class="grouped-cell col-size">{{ item.type === 'folder' ? '-' : item.size }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -689,6 +746,18 @@ const handleCustomGroupDrop = (groupId: string, isUngrouped?: boolean) => {
   align-items: center;
 }
 
+.custom-table-group-title {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.custom-table-group-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .custom-group-rename-input {
   width: 180px;
 }
@@ -738,6 +807,16 @@ const handleCustomGroupDrop = (groupId: string, isUngrouped?: boolean) => {
   border: 1px dashed #d6dfea;
   border-radius: 6px;
   background: #fbfcfe;
+}
+
+.custom-group-empty-slot-table {
+  margin: 4px 10px 8px;
+  min-height: 64px;
+}
+
+.custom-table-remove {
+  margin-left: auto;
+  padding-right: 0;
 }
 
 .grid-panel {

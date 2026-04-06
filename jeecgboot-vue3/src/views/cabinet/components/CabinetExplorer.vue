@@ -65,6 +65,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
 import { createImgPreview } from '/@/components/Preview/index';
+import { useUserStore } from '/@/store/modules/user';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
 import { adaptCabinetBootstrap, adaptCabinetItem, CABINET_ROOT_ID } from '../adapter';
 import {
@@ -114,6 +115,7 @@ const props = withDefaults(defineProps<Props>(), {
   canManage: true,
   scope: 'private',
 });
+const userStore = useUserStore();
 
 const treeItemList = ref<CabinetItem[]>(adaptCabinetBootstrap({ scope: props.scope, canManage: props.canManage, items: [] }, props.cabinetName));
 const currentFolderPageItems = ref<CabinetItem[]>([]);
@@ -228,8 +230,10 @@ const cloneCustomGroupList = (groups: CustomGroupItem[]) => groups.map((group) =
 const cloneCustomGroupAssignments = (assignments: Record<string, string[]>) =>
   Object.fromEntries(Object.entries(assignments).map(([fileId, groupIds]) => [fileId, [...groupIds]]));
 
-const getCustomGroupStorageKey = () => `${CUSTOM_GROUP_STORAGE_KEY_PREFIX}:${props.scope}`;
-const getCustomGroupPreferenceKey = () => `${CUSTOM_GROUP_PREFERENCE_KEY_PREFIX}:${props.scope}`;
+const getCustomGroupUserKey = () => userStore.getUserInfo?.username || userStore.getUserInfo?.id || 'anonymous';
+
+const getCustomGroupStorageKey = () => `${CUSTOM_GROUP_STORAGE_KEY_PREFIX}:${props.scope}:${getCustomGroupUserKey()}`;
+const getCustomGroupPreferenceKey = () => `${CUSTOM_GROUP_PREFERENCE_KEY_PREFIX}:${props.scope}:${getCustomGroupUserKey()}`;
 
 const loadCustomGroupState = () => {
   try {
@@ -461,7 +465,7 @@ const {
   canManage: canManageRef,
 });
 const currentVisibleItemIds = computed(() =>
-  isCustomGroupMode.value ? currentFolderFileItems.value.map((item) => item.id) : sortedFilteredFolderItems.value.map((item) => item.id),
+  isCustomGroupMode.value ? currentFolderGroupableItems.value.map((item) => item.id) : sortedFilteredFolderItems.value.map((item) => item.id),
 );
 
 const updateActiveCustomGroupAssignments = (nextAssignments: Record<string, string[]>) => {
@@ -647,7 +651,7 @@ const handleRemoveFileFromCustomGroup = (fileId: string, groupId: string) => {
   message.success('已移出分组');
 };
 const isCustomGroupMode = computed(() => groupField.value === 'custom');
-const currentFolderFileItems = computed(() => currentFolderPageItems.value.filter((item) => item.type === 'file'));
+const currentFolderGroupableItems = computed(() => currentFolderPageItems.value);
 const activeCustomGroupList = computed(() => (isEditingCustomGroups.value ? draftCustomGroupList.value : customGroupList.value));
 const activeCustomGroupAssignments = computed(() =>
   isEditingCustomGroups.value ? draftCustomGroupAssignments.value : customGroupAssignments.value,
@@ -660,14 +664,14 @@ const customGroupSections = computed<CustomGroupSection[]>(() => {
   const sections: CustomGroupSection[] = activeCustomGroupList.value.map((group) => ({
     key: group.id,
     title: group.name,
-    items: currentFolderFileItems.value.filter((item) => activeCustomGroupAssignments.value[item.id]?.includes(group.id)),
+    items: currentFolderGroupableItems.value.filter((item) => activeCustomGroupAssignments.value[item.id]?.includes(group.id)),
   }));
   const activeGroupIdSet = new Set(activeCustomGroupList.value.map((group) => group.id));
   sections.push({
     key: UNGROUPED_CUSTOM_GROUP_KEY,
     title: '未分组',
     isUngrouped: true,
-    items: currentFolderFileItems.value.filter((item) => {
+    items: currentFolderGroupableItems.value.filter((item) => {
       const groupIds = activeCustomGroupAssignments.value[item.id] || [];
       return !groupIds.some((groupId) => activeGroupIdSet.has(groupId));
     }),
