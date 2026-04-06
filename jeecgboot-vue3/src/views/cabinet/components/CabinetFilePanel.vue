@@ -181,7 +181,8 @@
           <div v-if="group.title" class="file-group-title">{{ group.title }}</div>
           <Draggable class="file-grid"
             :class="[`size-${gridIconSize}`, { 'sortable-disabled': sortField !== 'manual' }]"
-            :model-value="group.items" item-key="id" :disabled="!canManage" :move="handleGridDragMove"
+            :model-value="group.items" item-key="id"
+            :disabled="!canManage || sortField !== 'manual' || groupField === 'custom'" :move="handleGridDragMove"
             ghost-class="file-drag-ghost" chosen-class="file-drag-chosen" drag-class="file-drag-active" :animation="180"
             :data-group-key="group.key" @start="resetSameGroupSortArm()" @end="resetSameGroupSortArm()"
             @update:modelValue="emit('grid-order-change', group, $event)">
@@ -556,7 +557,7 @@ type DraggableMoveEvent = {
 };
 
 const handleGridDragMove = (evt: DraggableMoveEvent) => {
-  if (!props.canManage || props.sortField !== 'manual') {
+  if (!props.canManage || props.sortField !== 'manual' || props.groupField === 'custom') {
     return false;
   }
 
