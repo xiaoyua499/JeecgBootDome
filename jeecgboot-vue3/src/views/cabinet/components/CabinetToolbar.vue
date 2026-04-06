@@ -105,10 +105,19 @@
               <a-menu-item @click="emit('change-group-field', 'updateTime')">修改日期</a-menu-item>
               <a-menu-item @click="emit('change-group-field', 'type')">类型</a-menu-item>
               <a-menu-item @click="emit('change-group-field', 'size')">大小</a-menu-item>
+              <a-menu-item @click="emit('change-group-field', 'custom')">自定义分组</a-menu-item>
             </a-sub-menu>
           </a-menu>
         </template>
       </a-dropdown>
+      <template v-if="groupField === 'custom' && !isCustomGroupEditing">
+        <a-button @click="emit('edit-custom-groups')">编辑分组</a-button>
+      </template>
+      <template v-if="groupField === 'custom' && isCustomGroupEditing">
+        <a-button @click="emit('add-custom-group')">新增分组</a-button>
+        <a-button type="primary" @click="emit('save-custom-groups')">保存</a-button>
+        <a-button @click="emit('cancel-custom-group-edit')">取消编辑</a-button>
+      </template>
     </a-space>
     <a-space>
       <a-tooltip v-if="canManage" placement="bottom" title="上传进度">
@@ -168,6 +177,7 @@
     groupFieldLabel: { type: String, required: true },
     viewMode: { type: String as PropType<ViewMode>, required: true },
     gridIconSize: { type: String as PropType<GridIconSize>, required: true },
+    isCustomGroupEditing: { type: Boolean, default: false },
     /** 与项目内 JUpload / a-upload 一致：返回 false 走自定义逻辑（如写入本地列表或调业务上传） */
     beforeUpload: {
       type: Function as PropType<(file: File) => boolean | Promise<boolean>>,
@@ -259,6 +269,10 @@
     (e: 'change-sort-order', value: SortOrder): void;
     (e: 'change-group-field', value: GroupField): void;
     (e: 'change-view-mode', value: ViewMode): void;
+    (e: 'edit-custom-groups'): void;
+    (e: 'add-custom-group'): void;
+    (e: 'save-custom-groups'): void;
+    (e: 'cancel-custom-group-edit'): void;
   }>();
 </script>
 

@@ -4,7 +4,7 @@ export type ViewMode = 'grid' | 'table';
 export type GridIconSize = 'large' | 'small';
 export type SortField = 'manual' | 'name' | 'updateTime' | 'ext' | 'size';
 export type SortOrder = 'asc' | 'desc';
-export type GroupField = 'none' | 'name' | 'updateTime' | 'type' | 'size';
+export type GroupField = 'none' | 'name' | 'updateTime' | 'type' | 'size' | 'custom';
 export type ClipboardMode = 'copy' | 'cut';
 
 export interface CabinetExplorerProps {
@@ -41,6 +41,18 @@ export interface GroupSection {
   key: string;
   title: string;
   items: CabinetItem[];
+}
+
+export interface CustomGroupItem {
+  id: string;
+  name: string;
+}
+
+export interface CustomGroupSection {
+  key: string;
+  title: string;
+  items: CabinetItem[];
+  isUngrouped?: boolean;
 }
 
 export interface ClipboardState {

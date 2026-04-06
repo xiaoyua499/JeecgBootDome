@@ -13,7 +13,101 @@
     <div class="cabinet-upload-zone" :class="{ 'is-drag-over': uploadDragOver }"
       @dragenter.prevent="handleUploadDragEnter" @dragleave="handleUploadDragLeave"
       @dragover.prevent="handleUploadDragOver" @drop.prevent="handleUploadDrop">
-      <div v-if="viewMode === 'grid'" :ref="setGridPanelRef" class="grid-panel"
+      <div v-if="customGroupMode" class="custom-group-panel">
+        <a-empty
+          v-if="customGroupsEmpty"
+          description="暂无自定义分组，点击编辑分组后新增分组开始整理文件"
+          class="custom-group-empty"
+        />
+
+        <div v-else class="custom-group-list">
+          <div
+            v-for="group in customGroupSections"
+            :key="group.key"
+            class="custom-group-block"
+            :class="{ 'is-drag-over': customGroupDragOverId === group.key && !group.isUngrouped }"
+            @dragenter.prevent="handleCustomGroupDragEnter(group.key, group.isUngrouped)"
+            @dragover.prevent="handleCustomGroupDragOver(group.key, group.isUngrouped)"
+            @dragleave="handleCustomGroupDragLeave(group.key, $event)"
+            @drop.prevent="handleCustomGroupDrop(group.key, group.isUngrouped)"
+          >
+            <div class="custom-group-header">
+              <div class="custom-group-title-wrap">
+                <a-input
+                  v-if="isEditingCustomGroups && editingCustomGroupId === group.key && !group.isUngrouped"
+                  :value="editingCustomGroupName"
+                  class="custom-group-rename-input"
+                  size="small"
+                  @update:value="emit('update:editingCustomGroupName', $event)"
+                  @pressEnter="emit('submit-custom-group-rename')"
+                  @blur="emit('submit-custom-group-rename')"
+                />
+                <template v-else>
+                  <span class="custom-group-title">{{ group.title }}</span>
+                </template>
+                <span class="custom-group-count">({{ group.items.length }})</span>
+              </div>
+
+              <div v-if="isEditingCustomGroups && !group.isUngrouped" class="custom-group-actions">
+                <a-button type="link" size="small" @click="emit('start-custom-group-rename', group.key)">重命名</a-button>
+                <a-button type="link" danger size="small" @click="emit('delete-custom-group', group.key)">删除</a-button>
+              </div>
+            </div>
+
+            <Draggable
+              class="file-grid custom-file-grid"
+              :class="[`size-${gridIconSize}`]"
+              :model-value="group.items"
+              item-key="id"
+              :sort="false"
+              :group="resolveCustomDragGroup(group.isUngrouped)"
+              ghost-class="file-drag-ghost"
+              chosen-class="file-drag-chosen"
+              drag-class="file-drag-active"
+              :animation="180"
+              @start="handleCustomGroupDragStart(group.key, $event)"
+              @end="emit('custom-group-drag-end')"
+              @add="handleCustomGroupAdd(group.key, group.isUngrouped, $event)"
+            >
+              <template #item="{ element }">
+                <div class="custom-group-item-wrap" :data-file-id="element.id">
+                  <FileItem
+                    :data-file-id="element.id"
+                    :name="element.name"
+                    :icon-src="resolveCabinetItemIconSrc(element, gridIconSize)"
+                    :size="gridIconSize"
+                    :selected="selectedIdSet.has(element.id)"
+                    :cutting="clipboardCutIdSet.has(element.id)"
+                    :drop-target="false"
+                    :editing="false"
+                    :edit-value="''"
+                    @click="emit('item-click', element.id, $event)"
+                    @dblclick="emit('open', element)"
+                    @contextmenu="emit('item-contextmenu', element, $event)"
+                  />
+                  <button
+                    v-if="!group.isUngrouped"
+                    class="custom-group-remove"
+                    type="button"
+                    title="移出当前分组"
+                    @click.stop="emit('remove-file-from-custom-group', element.id, group.key)"
+                  >
+                    ×
+                  </button>
+                </div>
+              </template>
+
+              <template #footer>
+                <div v-if="group.items.length === 0" class="custom-group-empty-slot">
+                  {{ group.isUngrouped ? '暂无未分组文件' : '该分组暂无文件，可拖动文件到这里' }}
+                </div>
+              </template>
+            </Draggable>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="viewMode === 'grid'" :ref="setGridPanelRef" class="grid-panel"
         @mousedown="emit('grid-blank-mousedown', $event)">
         <template v-for="group in groupedSections" :key="group.key">
           <div v-if="group.title" class="file-group-title">{{ group.title }}</div>
@@ -179,6 +273,8 @@
               :class="{ active: groupField === 'type' }"></span>类型</li>
           <li @click="emit('change-group-field', 'size')"><span class="sort-dot"
               :class="{ active: groupField === 'size' }"></span>大小</li>
+          <li @click="emit('change-group-field', 'custom')"><span class="sort-dot"
+              :class="{ active: groupField === 'custom' }"></span>自定义分组</li>
         </ul>
       </li>
       <li class="with-children">
@@ -211,7 +307,7 @@ import Draggable from 'vuedraggable';
 import { ref } from 'vue';
 import type { PropType } from 'vue';
 import { Pagination } from 'ant-design-vue';
-import type { BreadcrumbItem, CabinetItem, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
+import type { BreadcrumbItem, CabinetItem, CustomGroupSection, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
 import { resolveCabinetItemIconSrc, resolveTypeLabel } from '../utils';
 import FileItem from './FileItem.vue';
 
@@ -252,6 +348,13 @@ const props = defineProps({
   sortField: { type: String as PropType<SortField>, required: true },
   sortOrder: { type: String as PropType<SortOrder>, required: true },
   groupField: { type: String as PropType<GroupField>, required: true },
+  customGroupMode: { type: Boolean, default: false },
+  customGroupSections: { type: Array as PropType<CustomGroupSection[]>, default: () => [] },
+  customGroupsEmpty: { type: Boolean, default: false },
+  isEditingCustomGroups: { type: Boolean, default: false },
+  editingCustomGroupId: { type: String, default: '' },
+  editingCustomGroupName: { type: String, default: '' },
+  customGroupDragOverId: { type: String, default: '' },
   currentPage: { type: Number, required: true },
   pageSize: { type: Number, required: true },
   totalItems: { type: Number, required: true },
@@ -295,6 +398,18 @@ const emit = defineEmits<{
   (e: 'change-sort-order', value: SortOrder): void;
   (e: 'change-group-field', value: GroupField): void;
   (e: 'change-view-mode', value: ViewMode): void;
+  (e: 'update:editingCustomGroupName', value: string): void;
+  (e: 'start-custom-group-rename', groupId: string): void;
+  (e: 'submit-custom-group-rename'): void;
+  (e: 'delete-custom-group', groupId: string): void;
+  (e: 'custom-group-drag-start', groupId: string, fileId: string): void;
+  (e: 'custom-group-drag-end'): void;
+  (e: 'custom-group-drag-enter', groupId: string): void;
+  (e: 'custom-group-drag-over', groupId: string): void;
+  (e: 'custom-group-drag-leave', groupId: string, event: DragEvent): void;
+  (e: 'custom-group-drop', groupId: string): void;
+  (e: 'custom-group-add-file', groupId: string, fileId: string): void;
+  (e: 'remove-file-from-custom-group', fileId: string, groupId: string): void;
   (e: 'update:propertyModalVisible', value: boolean): void;
   (e: 'upload-drop', dataTransfer: DataTransfer): void;
   (e: 'page-change', page: number, pageSize: number): void;
@@ -409,6 +524,58 @@ const handleGridDragMove = (evt: DraggableMoveEvent) => {
 const handlePaginationChange = (page: number, size: number) => {
   emit('page-change', page, size);
 };
+
+const resolveCustomDragGroup = (isUngrouped?: boolean) => ({
+  name: 'cabinet-custom-group',
+  pull: 'clone' as const,
+  put: !isUngrouped,
+});
+
+const handleCustomGroupDragStart = (
+  groupId: string,
+  event: { item: HTMLElement },
+) => {
+  const fileId = event.item.dataset.fileId || '';
+  if (fileId) {
+    emit('custom-group-drag-start', groupId, fileId);
+  }
+};
+
+const handleCustomGroupAdd = (
+  groupId: string,
+  isUngrouped: boolean | undefined,
+  event: { item: HTMLElement },
+) => {
+  if (isUngrouped) {
+    return;
+  }
+  const fileId = event.item.dataset.fileId || '';
+  if (fileId) {
+    emit('custom-group-add-file', groupId, fileId);
+  }
+};
+
+const handleCustomGroupDragEnter = (groupId: string, isUngrouped?: boolean) => {
+  if (!isUngrouped) {
+    emit('custom-group-drag-enter', groupId);
+  }
+};
+
+const handleCustomGroupDragOver = (groupId: string, isUngrouped?: boolean) => {
+  if (!isUngrouped) {
+    emit('custom-group-drag-over', groupId);
+  }
+};
+
+const handleCustomGroupDragLeave = (groupId: string, event: DragEvent) => {
+  emit('custom-group-drag-leave', groupId, event);
+};
+
+const handleCustomGroupDrop = (groupId: string, isUngrouped?: boolean) => {
+  if (!isUngrouped) {
+    emit('custom-group-drop', groupId);
+  }
+};
 </script>
 
 <style lang="less" scoped>
@@ -456,6 +623,121 @@ const handlePaginationChange = (page: number, size: number) => {
   background: rgb(74 144 255 / 12%);
   border-radius: 6px;
   pointer-events: none;
+}
+
+.custom-group-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.custom-group-empty {
+  margin: auto;
+}
+
+.custom-group-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px 10px;
+}
+
+.custom-group-block {
+  border: 1px solid #e6ebf2;
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px 12px 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.custom-group-block.is-drag-over {
+  border-color: #4a90ff;
+  background: #f2f7ff;
+  box-shadow: inset 0 0 0 1px rgb(74 144 255 / 18%);
+}
+
+.custom-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.custom-group-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.custom-group-title {
+  color: #2b3b4b;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.custom-group-count {
+  color: #7c8a99;
+  font-size: 12px;
+}
+
+.custom-group-actions {
+  display: flex;
+  align-items: center;
+}
+
+.custom-group-rename-input {
+  width: 180px;
+}
+
+.custom-file-grid {
+  min-height: 120px;
+  padding-top: 2px;
+}
+
+.custom-group-item-wrap {
+  position: relative;
+}
+
+.custom-group-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  color: #5f6b76;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 1px 4px rgb(31 45 61 / 12%);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.custom-group-item-wrap:hover .custom-group-remove {
+  opacity: 1;
+}
+
+.custom-group-remove:hover {
+  color: #ff4d4f;
+  background: #fff1f0;
+}
+
+.custom-group-empty-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+  color: #8391a2;
+  font-size: 12px;
+  border: 1px dashed #d6dfea;
+  border-radius: 6px;
+  background: #fbfcfe;
 }
 
 .grid-panel {

@@ -4,12 +4,15 @@
     <CabinetToolbar ref="cabinetToolbarRef" :can-manage="canManageRef" :selected-count="selectedItemIds.length"
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
-      :view-mode="viewMode" :grid-icon-size="gridIconSize" :before-upload="handleToolbarBeforeUpload"
+      :view-mode="viewMode" :grid-icon-size="gridIconSize" :is-custom-group-editing="isEditingCustomGroups"
+      :before-upload="handleToolbarBeforeUpload"
       @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true" @download="handleDownload"
       @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
       @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="handleGridIconSizeChange"
       @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
-      @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange" />
+      @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
+      @edit-custom-groups="enterCustomGroupEditMode" @add-custom-group="handleAddCustomGroup"
+      @save-custom-groups="handleSaveCustomGroups" @cancel-custom-group-edit="cancelCustomGroupEditMode" />
 
     <div class="cabinet-main">
       <CabinetTreePanel :tree-data="treeData" :selected-keys="selectedTreeKeys" @select="handleTreeSelect" />
@@ -21,6 +24,10 @@
         :can-paste-to-current-folder="canPasteToCurrentFolder" :can-paste-to-item-target="canPasteToItemTarget"
         :can-customize-icons="canCustomizeIcons" :view-mode="viewMode" :grid-icon-size="gridIconSize"
         :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField" :renaming-value="renamingValue"
+        :custom-group-mode="isCustomGroupMode" :custom-group-sections="customGroupSections"
+        :custom-groups-empty="customGroupsEmpty" :is-editing-custom-groups="isEditingCustomGroups"
+        :editing-custom-group-id="editingCustomGroupId" :editing-custom-group-name="editingCustomGroupName"
+        :custom-group-drag-over-id="customGroupDragOverId"
         :property-modal-visible="propertyModalVisible" :property-item="propertyItem" :is-renaming="isRenaming"
         :build-table-row-event="buildTableRowEvent" :build-table-row-class="buildTableRowClass"
         :set-file-panel-ref="setFilePanelRef" :current-page="currentPage" :page-size="pageSize"
@@ -35,6 +42,13 @@
         @view-property="handleViewProperty" @create-item="handleCreateItem" @upload="handleUpload"
         @refresh="handleRefresh" @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
         @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
+        @update:editingCustomGroupName="editingCustomGroupName = $event"
+        @start-custom-group-rename="startCustomGroupRename" @submit-custom-group-rename="submitCustomGroupRename"
+        @delete-custom-group="handleDeleteCustomGroup" @custom-group-drag-start="handleCustomGroupDragStart"
+        @custom-group-drag-end="handleCustomGroupDragEnd" @custom-group-drag-enter="handleCustomGroupDragEnter"
+        @custom-group-drag-over="handleCustomGroupDragOver" @custom-group-drag-leave="handleCustomGroupDragLeave"
+        @custom-group-drop="handleCustomGroupDrop" @custom-group-add-file="handleCustomGroupAddFile"
+        @remove-file-from-custom-group="handleRemoveFileFromCustomGroup"
         @update:propertyModalVisible="propertyModalVisible = $event" @upload-drop="handleUploadDrop"
         @page-change="handlePageChange" />
     </div>
@@ -48,7 +62,7 @@
 
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { useModal } from '/@/components/Modal';
 import { createImgPreview } from '/@/components/Preview/index';
 import { getFileAccessHttpUrl } from '/@/utils/common/compUtils';
@@ -74,8 +88,8 @@ import { useCabinetComputed } from '../composables/useCabinetComputed';
 import { useCabinetSelection } from '../composables/useCabinetSelection';
 import { type CabinetUploadEntry, useCabinetUpload } from '../composables/useCabinetUpload';
 import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
-import type { CabinetItem, CabinetScope, ClipboardState, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
-import { buildIndexedSiblingName, buildSiblingName, isCabinetImageExt, resolveCabinetFileExt } from '../utils';
+import type { CabinetItem, CabinetScope, ClipboardState, CustomGroupItem, CustomGroupSection, GridIconSize, GroupField, GroupSection, ItemType, SortField, SortOrder, ViewMode } from '../types';
+import { buildIndexedSiblingName, buildSiblingName, generateItemId, isCabinetImageExt, resolveCabinetFileExt } from '../utils';
 import CabinetCreateItemModal from './CabinetCreateItemModal.vue';
 import CabinetCustomizeIconModal from './CabinetCustomizeIconModal.vue';
 import CabinetFilePanel from './CabinetFilePanel.vue';
@@ -91,6 +105,9 @@ interface Props {
   scope?: CabinetScope;
 }
 
+const CUSTOM_GROUP_STORAGE_KEY_PREFIX = 'cabinet-custom-groups';
+const UNGROUPED_CUSTOM_GROUP_KEY = '__ungrouped__';
+
 const props = withDefaults(defineProps<Props>(), {
   cabinetName: '私柜',
   canManage: true,
@@ -105,6 +122,15 @@ const searchKeyword = ref('');
 const sortField = ref<SortField>('manual');
 const sortOrder = ref<SortOrder>('asc');
 const groupField = ref<GroupField>('none');
+const customGroupList = ref<CustomGroupItem[]>([]);
+const customGroupAssignments = ref<Record<string, string[]>>({});
+const draftCustomGroupList = ref<CustomGroupItem[]>([]);
+const draftCustomGroupAssignments = ref<Record<string, string[]>>({});
+const isEditingCustomGroups = ref(false);
+const editingCustomGroupId = ref('');
+const editingCustomGroupName = ref('');
+const customGroupDragFileId = ref('');
+const customGroupDragOverId = ref('');
 const currentFolderId = ref(CABINET_ROOT_ID);
 const currentPage = ref(1);
 const pageSize = ref(40);
@@ -196,6 +222,57 @@ const applyViewPreference = (preference: CabinetViewPreferenceState) => {
   groupField.value = preference.groupField;
 };
 
+const cloneCustomGroupList = (groups: CustomGroupItem[]) => groups.map((group) => ({ ...group }));
+
+const cloneCustomGroupAssignments = (assignments: Record<string, string[]>) =>
+  Object.fromEntries(Object.entries(assignments).map(([fileId, groupIds]) => [fileId, [...groupIds]]));
+
+const getCustomGroupStorageKey = () => `${CUSTOM_GROUP_STORAGE_KEY_PREFIX}:${props.scope}`;
+
+const loadCustomGroupState = () => {
+  try {
+    const raw = localStorage.getItem(getCustomGroupStorageKey());
+    if (!raw) {
+      customGroupList.value = [];
+      customGroupAssignments.value = {};
+      return;
+    }
+    const parsed = JSON.parse(raw) as {
+      groups?: CustomGroupItem[];
+      assignments?: Record<string, string[]>;
+    };
+    customGroupList.value = Array.isArray(parsed?.groups)
+      ? parsed.groups
+          .map((group) => ({ id: String(group.id || ''), name: String(group.name || '').trim() }))
+          .filter((group) => group.id && group.name)
+      : [];
+    customGroupAssignments.value = parsed?.assignments && typeof parsed.assignments === 'object'
+      ? Object.fromEntries(
+          Object.entries(parsed.assignments).map(([fileId, groupIds]) => [
+            fileId,
+            Array.isArray(groupIds) ? groupIds.map(String) : [],
+          ]),
+        )
+      : {};
+  } catch (error) {
+    customGroupList.value = [];
+    customGroupAssignments.value = {};
+  }
+};
+
+const persistCustomGroupState = () => {
+  localStorage.setItem(
+    getCustomGroupStorageKey(),
+    JSON.stringify({
+      groups: customGroupList.value,
+      assignments: customGroupAssignments.value,
+    }),
+  );
+};
+
+const resolveFolderViewGroupField = (): Exclude<GroupField, 'custom'> =>
+  groupField.value === 'custom' ? 'none' : groupField.value;
+
 const replaceCurrentFolderPageItems = (items: Parameters<typeof adaptCabinetItem>[0][]) => {
   currentFolderPageItems.value = items.map(adaptCabinetItem);
 };
@@ -218,7 +295,7 @@ const persistViewPreference = async () => {
     gridIconSize: gridIconSize.value,
     sortField: sortField.value,
     sortOrder: sortOrder.value,
-    groupField: groupField.value,
+    groupField: resolveFolderViewGroupField(),
   });
 };
 
@@ -235,7 +312,7 @@ const syncFolderView = async (options?: { showError?: boolean }) => {
       keyword: searchKeyword.value.trim() || undefined,
       sortField: sortField.value,
       sortOrder: sortOrder.value,
-      groupField: groupField.value,
+      groupField: resolveFolderViewGroupField(),
       pageNo: currentPage.value,
       pageSize: pageSize.value,
     }, { signal: controller.signal });
@@ -347,6 +424,7 @@ const reloadBootstrap = async (options?: { silent?: boolean }) => {
 };
 
 const initializeCabinet = async () => {
+  loadCustomGroupState();
   try {
     await loadViewPreference();
   } catch (error) { }
@@ -373,7 +451,220 @@ const {
   clipboardState,
   canManage: canManageRef,
 });
-const currentVisibleItemIds = computed(() => sortedFilteredFolderItems.value.map((item) => item.id));
+const currentVisibleItemIds = computed(() =>
+  isCustomGroupMode.value ? currentFolderFileItems.value.map((item) => item.id) : sortedFilteredFolderItems.value.map((item) => item.id),
+);
+
+const updateActiveCustomGroupAssignments = (nextAssignments: Record<string, string[]>) => {
+  if (isEditingCustomGroups.value) {
+    draftCustomGroupAssignments.value = nextAssignments;
+    return;
+  }
+  customGroupAssignments.value = nextAssignments;
+  persistCustomGroupState();
+};
+
+const addFileToCustomGroup = (fileId: string, groupId: string) => {
+  if (!fileId || !groupId || groupId === UNGROUPED_CUSTOM_GROUP_KEY) {
+    return;
+  }
+  const nextAssignments = cloneCustomGroupAssignments(activeCustomGroupAssignments.value);
+  const previous = nextAssignments[fileId] || [];
+  if (previous.includes(groupId)) {
+    return;
+  }
+  nextAssignments[fileId] = [...previous, groupId];
+  updateActiveCustomGroupAssignments(nextAssignments);
+  message.success('已加入分组');
+};
+
+const removeFileFromCustomGroupMapping = (fileId: string, groupId: string) => {
+  const nextAssignments = cloneCustomGroupAssignments(activeCustomGroupAssignments.value);
+  const previous = nextAssignments[fileId] || [];
+  nextAssignments[fileId] = previous.filter((id) => id !== groupId);
+  if (!nextAssignments[fileId].length) {
+    delete nextAssignments[fileId];
+  }
+  updateActiveCustomGroupAssignments(nextAssignments);
+};
+
+const enterCustomGroupEditMode = () => {
+  draftCustomGroupList.value = cloneCustomGroupList(customGroupList.value);
+  draftCustomGroupAssignments.value = cloneCustomGroupAssignments(customGroupAssignments.value);
+  isEditingCustomGroups.value = true;
+  editingCustomGroupId.value = '';
+  editingCustomGroupName.value = '';
+};
+
+const cancelCustomGroupEditMode = () => {
+  isEditingCustomGroups.value = false;
+  draftCustomGroupList.value = [];
+  draftCustomGroupAssignments.value = {};
+  editingCustomGroupId.value = '';
+  editingCustomGroupName.value = '';
+};
+
+const handleAddCustomGroup = () => {
+  if (!isEditingCustomGroups.value) {
+    return;
+  }
+  const nextIndex = draftCustomGroupList.value.length + 1;
+  const nextGroup = {
+    id: generateItemId('custom-group'),
+    name: `新分组 ${nextIndex}`,
+  };
+  draftCustomGroupList.value = [...draftCustomGroupList.value, nextGroup];
+  editingCustomGroupId.value = nextGroup.id;
+  editingCustomGroupName.value = nextGroup.name;
+};
+
+const startCustomGroupRename = (groupId: string) => {
+  const target = draftCustomGroupList.value.find((group) => group.id === groupId);
+  if (!target) {
+    return;
+  }
+  editingCustomGroupId.value = groupId;
+  editingCustomGroupName.value = target.name;
+};
+
+const submitCustomGroupRename = () => {
+  if (!isEditingCustomGroups.value || !editingCustomGroupId.value) {
+    return;
+  }
+  const normalizedName = editingCustomGroupName.value.trim();
+  if (!normalizedName) {
+    message.warning('分组名称不能为空');
+    return;
+  }
+  const hasDuplicate = draftCustomGroupList.value.some(
+    (group) => group.id !== editingCustomGroupId.value && group.name === normalizedName,
+  );
+  if (hasDuplicate) {
+    message.warning('分组名称不能重复');
+    return;
+  }
+  draftCustomGroupList.value = draftCustomGroupList.value.map((group) =>
+    group.id === editingCustomGroupId.value ? { ...group, name: normalizedName } : group,
+  );
+  editingCustomGroupId.value = '';
+  editingCustomGroupName.value = '';
+};
+
+const handleDeleteCustomGroup = (groupId: string) => {
+  if (!isEditingCustomGroups.value) {
+    return;
+  }
+  Modal.confirm({
+    title: '删除分组',
+    content: '删除分组不会删除文件，只会移除文件与该分组的归属关系。',
+    onOk: () => {
+      draftCustomGroupList.value = draftCustomGroupList.value.filter((group) => group.id !== groupId);
+      const nextAssignments = cloneCustomGroupAssignments(draftCustomGroupAssignments.value);
+      Object.keys(nextAssignments).forEach((fileId) => {
+        nextAssignments[fileId] = nextAssignments[fileId].filter((id) => id !== groupId);
+        if (!nextAssignments[fileId].length) {
+          delete nextAssignments[fileId];
+        }
+      });
+      draftCustomGroupAssignments.value = nextAssignments;
+      if (editingCustomGroupId.value === groupId) {
+        editingCustomGroupId.value = '';
+        editingCustomGroupName.value = '';
+      }
+    },
+  });
+};
+
+const handleSaveCustomGroups = () => {
+  const normalizedGroups = draftCustomGroupList.value
+    .map((group) => ({ ...group, name: group.name.trim() }))
+    .filter((group) => group.name);
+  customGroupList.value = cloneCustomGroupList(normalizedGroups);
+  const validGroupIdSet = new Set(customGroupList.value.map((group) => group.id));
+  customGroupAssignments.value = Object.fromEntries(
+    Object.entries(draftCustomGroupAssignments.value)
+      .map(([fileId, groupIds]) => [fileId, groupIds.filter((groupId) => validGroupIdSet.has(groupId))])
+      .filter(([, groupIds]) => groupIds.length),
+  );
+  persistCustomGroupState();
+  cancelCustomGroupEditMode();
+  message.success('分组已保存');
+};
+
+const handleCustomGroupDragStart = (_groupId: string, fileId: string) => {
+  customGroupDragFileId.value = fileId;
+};
+
+const handleCustomGroupDragEnd = () => {
+  customGroupDragFileId.value = '';
+  customGroupDragOverId.value = '';
+};
+
+const handleCustomGroupDragEnter = (groupId: string) => {
+  if (groupId !== UNGROUPED_CUSTOM_GROUP_KEY) {
+    customGroupDragOverId.value = groupId;
+  }
+};
+
+const handleCustomGroupDragOver = (groupId: string) => {
+  if (groupId !== UNGROUPED_CUSTOM_GROUP_KEY) {
+    customGroupDragOverId.value = groupId;
+  }
+};
+
+const handleCustomGroupDragLeave = (groupId: string, event: DragEvent) => {
+  const current = event.currentTarget as HTMLElement | null;
+  const related = event.relatedTarget as Node | null;
+  if (current && related && current.contains(related)) {
+    return;
+  }
+  if (customGroupDragOverId.value === groupId) {
+    customGroupDragOverId.value = '';
+  }
+};
+
+const handleCustomGroupDrop = (groupId: string) => {
+  if (groupId !== UNGROUPED_CUSTOM_GROUP_KEY) {
+    customGroupDragOverId.value = '';
+  }
+};
+
+const handleCustomGroupAddFile = (groupId: string, fileId: string) => {
+  addFileToCustomGroup(fileId, groupId);
+};
+
+const handleRemoveFileFromCustomGroup = (fileId: string, groupId: string) => {
+  removeFileFromCustomGroupMapping(fileId, groupId);
+  message.success('已移出分组');
+};
+const isCustomGroupMode = computed(() => groupField.value === 'custom');
+const currentFolderFileItems = computed(() => currentFolderPageItems.value.filter((item) => item.type === 'file'));
+const activeCustomGroupList = computed(() => (isEditingCustomGroups.value ? draftCustomGroupList.value : customGroupList.value));
+const activeCustomGroupAssignments = computed(() =>
+  isEditingCustomGroups.value ? draftCustomGroupAssignments.value : customGroupAssignments.value,
+);
+const customGroupsEmpty = computed(() => isCustomGroupMode.value && activeCustomGroupList.value.length === 0);
+const customGroupSections = computed<CustomGroupSection[]>(() => {
+  if (!isCustomGroupMode.value || activeCustomGroupList.value.length === 0) {
+    return [];
+  }
+  const sections: CustomGroupSection[] = activeCustomGroupList.value.map((group) => ({
+    key: group.id,
+    title: group.name,
+    items: currentFolderFileItems.value.filter((item) => activeCustomGroupAssignments.value[item.id]?.includes(group.id)),
+  }));
+  const activeGroupIdSet = new Set(activeCustomGroupList.value.map((group) => group.id));
+  sections.push({
+    key: UNGROUPED_CUSTOM_GROUP_KEY,
+    title: '未分组',
+    isUngrouped: true,
+    items: currentFolderFileItems.value.filter((item) => {
+      const groupIds = activeCustomGroupAssignments.value[item.id] || [];
+      return !groupIds.some((groupId) => activeGroupIdSet.has(groupId));
+    }),
+  });
+  return sections;
+});
 
 // 选择相关交互：单选、多选、框选、快捷键全选等。
 const {
@@ -684,6 +975,16 @@ const handleSortOrderChange = (order: SortOrder) => {
 
 const handleGroupFieldChange = (field: GroupField) => {
   currentPage.value = 1;
+  if (field === 'custom') {
+    groupField.value = 'custom';
+    hideContextMenu();
+    clearSelection();
+    void syncFolderView({ showError: true });
+    return;
+  }
+  if (groupField.value === 'custom') {
+    cancelCustomGroupEditMode();
+  }
   void savePreferenceAndSyncFolderView({ groupField: field }, { showError: true });
 };
 

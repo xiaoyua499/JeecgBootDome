@@ -42,7 +42,7 @@ export function useCabinetComputed(params: {
     () => ({ manual: '手动排序', name: '名称', updateTime: '修改日期', ext: '类型', size: '大小' })[params.sortField.value]
   );
   const sortOrderLabel = computed(() => (params.sortOrder.value === 'asc' ? '递增' : '递减'));
-  const groupFieldLabel = computed(() => ({ none: '无', name: '名称', updateTime: '修改日期', type: '类型', size: '大小' })[params.groupField.value]);
+  const groupFieldLabel = computed(() => ({ none: '无', name: '名称', updateTime: '修改日期', type: '类型', size: '大小', custom: '自定义分组' })[params.groupField.value]);
 
   return {
     folderMap,

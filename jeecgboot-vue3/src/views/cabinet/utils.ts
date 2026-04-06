@@ -116,6 +116,9 @@ export function resolveGroupTitle(item: CabinetItem, groupField: GroupField) {
   if (groupField === 'none') {
     return '';
   }
+  if (groupField === 'custom') {
+    return '';
+  }
   if (groupField === 'type') {
     return item.type === 'folder' ? '文件夹' : '文件';
   }
@@ -142,7 +145,7 @@ export function resolveGroupTitle(item: CabinetItem, groupField: GroupField) {
 }
 
 export function buildGroupedSections(items: CabinetItem[], groupField: GroupField): GroupSection[] {
-  if (groupField === 'none') {
+  if (groupField === 'none' || groupField === 'custom') {
     return [{ key: 'all', title: '', items }];
   }
   const sectionMap = new Map<string, GroupSection>();
