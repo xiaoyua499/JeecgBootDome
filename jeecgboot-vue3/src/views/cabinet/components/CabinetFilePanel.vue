@@ -55,7 +55,6 @@
               item-key="id"
               :sort="false"
               :group="resolveCustomDragGroup(group.isUngrouped)"
-              :disabled="!isEditingCustomGroups"
               ghost-class="file-drag-ghost"
               chosen-class="file-drag-chosen"
               drag-class="file-drag-active"
@@ -144,7 +143,6 @@
               item-key="id"
               :sort="false"
               :group="resolveCustomDragGroup(group.isUngrouped)"
-              :disabled="!isEditingCustomGroups"
               ghost-class="file-drag-ghost"
               chosen-class="file-drag-chosen"
               drag-class="file-drag-active"
@@ -596,7 +594,7 @@ const handlePaginationChange = (page: number, size: number) => {
 const resolveCustomDragGroup = (isUngrouped?: boolean) => ({
   name: 'cabinet-custom-group',
   pull: 'clone' as const,
-  put: !isUngrouped,
+  put: true,
 });
 
 const handleCustomGroupDragStart = (
@@ -611,12 +609,9 @@ const handleCustomGroupDragStart = (
 
 const handleCustomGroupAdd = (
   groupId: string,
-  isUngrouped: boolean | undefined,
+  _isUngrouped: boolean | undefined,
   event: { item: HTMLElement },
 ) => {
-  if (isUngrouped) {
-    return;
-  }
   const fileId = event.item.dataset.fileId || '';
   if (fileId) {
     emit('custom-group-add-file', groupId, fileId);

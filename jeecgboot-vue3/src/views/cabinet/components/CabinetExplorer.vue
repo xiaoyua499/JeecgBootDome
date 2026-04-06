@@ -133,6 +133,7 @@ const isEditingCustomGroups = ref(false);
 const editingCustomGroupId = ref('');
 const editingCustomGroupName = ref('');
 const customGroupDragFileId = ref('');
+const customGroupDragSourceGroupId = ref('');
 const customGroupDragOverId = ref('');
 const currentFolderId = ref(CABINET_ROOT_ID);
 const currentPage = ref(1);
@@ -478,9 +479,6 @@ const updateActiveCustomGroupAssignments = (nextAssignments: Record<string, stri
 };
 
 const addFileToCustomGroup = (fileId: string, groupId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   if (!fileId || !groupId || groupId === UNGROUPED_CUSTOM_GROUP_KEY) {
     return;
   }
@@ -495,9 +493,6 @@ const addFileToCustomGroup = (fileId: string, groupId: string) => {
 };
 
 const removeFileFromCustomGroupMapping = (fileId: string, groupId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   const nextAssignments = cloneCustomGroupAssignments(activeCustomGroupAssignments.value);
   const previous = nextAssignments[fileId] || [];
   nextAssignments[fileId] = previous.filter((id) => id !== groupId);
@@ -611,30 +606,23 @@ const handleSaveCustomGroups = () => {
 };
 
 const handleCustomGroupDragStart = (_groupId: string, fileId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   customGroupDragFileId.value = fileId;
+  customGroupDragSourceGroupId.value = _groupId;
 };
 
 const handleCustomGroupDragEnd = () => {
   customGroupDragFileId.value = '';
+  customGroupDragSourceGroupId.value = '';
   customGroupDragOverId.value = '';
 };
 
 const handleCustomGroupDragEnter = (groupId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   if (groupId !== UNGROUPED_CUSTOM_GROUP_KEY) {
     customGroupDragOverId.value = groupId;
   }
 };
 
 const handleCustomGroupDragOver = (groupId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   if (groupId !== UNGROUPED_CUSTOM_GROUP_KEY) {
     customGroupDragOverId.value = groupId;
   }
@@ -652,25 +640,23 @@ const handleCustomGroupDragLeave = (groupId: string, event: DragEvent) => {
 };
 
 const handleCustomGroupDrop = (groupId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   if (groupId !== UNGROUPED_CUSTOM_GROUP_KEY) {
     customGroupDragOverId.value = '';
   }
 };
 
 const handleCustomGroupAddFile = (groupId: string, fileId: string) => {
-  if (!isEditingCustomGroups.value) {
+  if (groupId === UNGROUPED_CUSTOM_GROUP_KEY) {
+    if (customGroupDragSourceGroupId.value && customGroupDragSourceGroupId.value !== UNGROUPED_CUSTOM_GROUP_KEY) {
+      removeFileFromCustomGroupMapping(fileId, customGroupDragSourceGroupId.value);
+      message.success('已移回未分组');
+    }
     return;
   }
   addFileToCustomGroup(fileId, groupId);
 };
 
 const handleRemoveFileFromCustomGroup = (fileId: string, groupId: string) => {
-  if (!isEditingCustomGroups.value) {
-    return;
-  }
   removeFileFromCustomGroupMapping(fileId, groupId);
   message.success('已移出分组');
 };
