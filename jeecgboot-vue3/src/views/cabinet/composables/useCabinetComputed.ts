@@ -1,3 +1,23 @@
+/**
+ * useCabinetComputed - 文件柜计算属性集合
+ *
+ * 将 CabinetExplorer 中频繁使用的派生状态统一封装为 computed，
+ * 避免在模板和其他 composable 中重复计算。
+ *
+ * 提供的计算属性：
+ * - folderMap              - 文件夹 id → CabinetItem 的 Map，用于快速查找和面包屑构建
+ * - sortedFilteredFolderItems - 当前文件夹已排序/过滤的条目列表（直接透传 currentFolderItems）
+ * - groupedSections        - 按当前 groupField 分组后的区块数组
+ * - breadcrumbItems        - 当前路径的面包屑导航数组
+ * - treeData               - 左侧文件夹树的 Ant Design DataNode 数组
+ * - currentVisibleItemIds  - 当前可见条目的 id 列表（用于全选和框选）
+ * - clipboardCutIdSet      - 处于剪切状态的条目 id Set（用于渲染半透明效果）
+ * - canPasteToCurrentFolder - 当前文件夹是否可粘贴（有管理权限且剪贴板非空）
+ * - canPasteToItemTarget   - 右键目标文件夹是否可粘贴
+ * - sortFieldLabel         - 当前排序字段的中文标签
+ * - sortOrderLabel         - 当前排序方向的中文标签
+ * - groupFieldLabel        - 当前分组字段的中文标签
+ */
 import { computed, type Ref } from 'vue';
 import type { ClipboardState, GroupField, SortField, SortOrder, CabinetItem } from '../types';
 import { buildBreadcrumbItems, buildGroupedSections, buildTreeData } from '../utils';

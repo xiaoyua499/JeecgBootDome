@@ -19,6 +19,7 @@ const departNamePath = ref<Record<string, string>>({});
 
 const globSetting = useGlobSetting();
 const baseApiUrl = globSetting.domainUrl;
+
 /**
  *  获取文件服务访问路径
  * @param fileUrl 文件路径

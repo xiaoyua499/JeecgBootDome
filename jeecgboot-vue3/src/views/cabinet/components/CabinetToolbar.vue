@@ -1,4 +1,29 @@
-<!-- 文件柜顶部工具栏：负责管理按钮、搜索、排序/分组入口和视图模式切换。 -->
+<!-- 文件柜顶部工具栏
+  负责管理按钮、搜索、排序/分组入口和视图模式切换。
+
+  左侧区域（按顺序）：
+  - 新建按钮（下拉：新建文件 / 新建文件夹），canManage=true 时显示
+  - 上传按钮（下拉：上传文件 / 上传文件夹），canManage=true 时显示
+    内部包含两个隐藏的 <input type="file">，点击菜单项时触发对应 input.click()
+  - 下载按钮，选中条目数为 0 时禁用
+  - 删除按钮，canManage=true 且选中条目数 > 0 时可用
+  - 搜索框，实时过滤当前目录
+  - 排序/分组下拉菜单（排序字段、排序方向、分组依据）
+  - 自定义分组编辑控件（groupField==='custom' 时显示）
+
+  右侧区域：
+  - 刷新按钮
+  - 上传进度按钮（canManage=true 时显示）
+  - 图标视图切换按钮（含大/小图标子菜单）
+  - 列表视图切换按钮
+
+  Props 说明：
+  - beforeUpload: 文件选择后的回调，返回 false 走自定义上传逻辑（与 a-upload 约定一致）
+
+  暴露方法（defineExpose）：
+  - openUploadDialog(): 触发文件上传对话框（供右键菜单调用）
+  - openUploadFolderDialog(): 触发文件夹上传对话框
+-->
 <template>
   <div class="cabinet-toolbar">
     <a-space>
@@ -155,17 +180,29 @@ import type { GridIconSize, GroupField, ItemType, SortField, SortOrder, ViewMode
 import { RedoOutlined } from '@ant-design/icons-vue';
 // 顶部工具栏：负责管理按钮、搜索、排序/分组入口和视图模式切换。
 const props = defineProps({
+  /** 是否有管理权限，控制新建/上传/删除按钮的显示 */
   canManage: { type: Boolean, required: true },
+  /** 当前已选中的条目数量，为 0 时禁用下载/删除按钮 */
   selectedCount: { type: Number, required: true },
+  /** 搜索关键词（v-model:searchKeyword） */
   searchKeyword: { type: String, required: true },
+  /** 当前排序字段 */
   sortField: { type: String as PropType<SortField>, required: true },
+  /** 当前排序方向 */
   sortOrder: { type: String as PropType<SortOrder>, required: true },
+  /** 当前分组字段 */
   groupField: { type: String as PropType<GroupField>, required: true },
+  /** 排序字段的中文标签，显示在排序按钮上 */
   sortFieldLabel: { type: String, required: true },
+  /** 排序方向的中文标签 */
   sortOrderLabel: { type: String, required: true },
+  /** 分组字段的中文标签 */
   groupFieldLabel: { type: String, required: true },
+  /** 当前视图模式（grid/table） */
   viewMode: { type: String as PropType<ViewMode>, required: true },
+  /** 网格图标尺寸（large/small） */
   gridIconSize: { type: String as PropType<GridIconSize>, required: true },
+  /** 是否处于自定义分组编辑模式 */
   isCustomGroupEditing: { type: Boolean, default: false },
   /** 与项目内 JUpload / a-upload 一致：返回 false 走自定义逻辑（如写入本地列表或调业务上传） */
   beforeUpload: {
@@ -179,22 +216,28 @@ const fileUploadInputRef = ref<HTMLInputElement | null>(null);
 const folderUploadInputRef = ref<HTMLInputElement | null>(null);
 const gridViewTooltipOpen = ref(false);
 
+/** 新建下拉菜单项：新建文件 / 新建文件夹 */
 const createMenuList: DropMenu[] = [
   { event: 'file', text: '新建文件', icon: 'ant-design:file-add-outlined' },
   { event: 'folder', text: '新建文件夹', icon: 'ant-design:folder-add-outlined' },
 ];
 
+/** 处理新建下拉菜单点击，将 menu.event 转换为 ItemType 后向上抛出 create-item 事件 */
 function handleCreateMenuEvent(menu?: DropMenu) {
   const type = menu?.event === 'file' ? 'file' : 'folder';
   emit('create-item', type);
 }
 
+/** 点击图标视图按钮：关闭 tooltip 并切换到 grid 视图模式 */
 function handleGridViewClick() {
   gridViewTooltipOpen.value = false;
   emit('change-view-mode', 'grid');
 }
 
-/** 供右键菜单「上传」等场景触发与工具栏相同的文件选择框 */
+/**
+ * 打开文件上传对话框（供右键菜单等外部场景调用）
+ * 内部委托给 openUploadFileDialog
+ */
 function openUploadDialog() {
   if (!props.canManage) {
     return;
@@ -202,6 +245,7 @@ function openUploadDialog() {
   openUploadFileDialog();
 }
 
+/** 触发隐藏的文件 input，打开系统文件选择对话框（支持多选） */
 function openUploadFileDialog() {
   if (!props.canManage) {
     return;
@@ -212,6 +256,7 @@ function openUploadFileDialog() {
   }
 }
 
+/** 触发隐藏的文件夹 input（webkitdirectory），打开系统文件夹选择对话框 */
 function openUploadFolderDialog() {
   if (!props.canManage) {
     return;
@@ -222,6 +267,11 @@ function openUploadFolderDialog() {
   }
 }
 
+/**
+ * 处理文件 input change 事件
+ * 遍历选中的文件列表，逐个调用 beforeUpload 回调
+ * 调用完成后重置 input.value，确保下次选择同名文件时仍能触发 change 事件
+ */
 async function handleFileInputChange(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files || []);
@@ -231,6 +281,11 @@ async function handleFileInputChange(event: Event) {
   input.value = '';
 }
 
+/**
+ * 处理文件夹 input change 事件（webkitdirectory 模式）
+ * 与 handleFileInputChange 逻辑相同，文件带有 webkitRelativePath 属性
+ * useCabinetUpload.ingestPlainFiles 会利用该属性还原目录层级
+ */
 async function handleFolderInputChange(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files || []);

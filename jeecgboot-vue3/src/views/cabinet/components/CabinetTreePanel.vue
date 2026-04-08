@@ -1,4 +1,16 @@
-<!-- 文件柜左侧目录树：负责目录结构展示和节点切换。 -->
+<!-- 文件柜左侧目录树
+  负责目录结构展示和节点切换。
+
+  功能说明：
+  - 使用 Ant Design Vue 的 a-tree 组件渲染文件夹树
+  - treeData 由 useCabinetComputed.buildTreeData 从扁平 itemList 构建
+  - selectedKeys 由父组件（CabinetExplorer）维护，对应当前所在文件夹 id
+  - 点击节点时抛出 select 事件，父组件响应后切换 currentFolderId
+
+  注意：
+  - 只显示文件夹（type === 'folder'），文件不出现在树中
+  - block-node 属性使节点占满整行，便于点击
+-->
 <template>
   <div class="cabinet-tree">
     <a-tree :tree-data="treeData" :selected-keys="selectedKeys" block-node @select="emit('select', $event)" />

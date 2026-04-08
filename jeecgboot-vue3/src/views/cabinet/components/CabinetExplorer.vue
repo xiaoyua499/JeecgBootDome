@@ -1,23 +1,31 @@
-<!-- 文件柜主容器：负责页面状态、业务编排，以及连接工具栏、目录树和文件区子组件。 -->
+<!-- 文件柜主容器：负责页面状态、业务编排，以及连接工具栏、目录树和文件区子组件。
+  架构说明：
+  - treeItemList: 左侧目录树数据（bootstrap 接口返回的文件夹树）
+  - currentFolderPageItems: 当前文件夹的分页条目（folder-view 接口返回）
+  - itemList: 两者合并的完整条目列表（computed），供 composable 使用
+  - 视图偏好（viewMode/sortField/groupField 等）持久化到后端，自定义分组偏好额外存 localStorage
+  - 自定义分组有"编辑模式"（draft 状态），编辑期间操作 draft，保存后才写入正式状态
+  - 上传流程：工具栏/拖拽 → useCabinetUpload 解析 → enqueueTasks → 队列逐个上传
+-->
 <template>
   <div class="cabinet-explorer">
     <CabinetToolbar ref="cabinetToolbarRef" :can-manage="canManageRef" :selected-count="selectedItemIds.length"
       :search-keyword="searchKeyword" :sort-field="sortField" :sort-order="sortOrder" :group-field="groupField"
       :sort-field-label="sortFieldLabel" :sort-order-label="sortOrderLabel" :group-field-label="groupFieldLabel"
       :view-mode="viewMode" :grid-icon-size="gridIconSize" :is-custom-group-editing="isEditingCustomGroups"
-      :before-upload="handleToolbarBeforeUpload"
-      @create-item="handleCreateItem" @open-upload-progress="uploadProgressOpen = true" @download="handleDownload"
-      @delete="handleDelete" @refresh="handleRefresh" @search="handleSearch"
-      @update:searchKeyword="searchKeyword = $event" @update:gridIconSize="handleGridIconSizeChange"
-      @change-sort-field="handleSortFieldChange" @change-sort-order="handleSortOrderChange"
-      @change-group-field="handleGroupFieldChange" @change-view-mode="handleViewModeChange"
-      @edit-custom-groups="enterCustomGroupEditMode" @add-custom-group="handleAddCustomGroup"
-      @save-custom-groups="handleSaveCustomGroups" @cancel-custom-group-edit="cancelCustomGroupEditMode" />
+      :before-upload="handleToolbarBeforeUpload" @create-item="handleCreateItem"
+      @open-upload-progress="uploadProgressOpen = true" @download="handleDownload" @delete="handleDelete"
+      @refresh="handleRefresh" @search="handleSearch" @update:searchKeyword="searchKeyword = $event"
+      @update:gridIconSize="handleGridIconSizeChange" @change-sort-field="handleSortFieldChange"
+      @change-sort-order="handleSortOrderChange" @change-group-field="handleGroupFieldChange"
+      @change-view-mode="handleViewModeChange" @edit-custom-groups="enterCustomGroupEditMode"
+      @add-custom-group="handleAddCustomGroup" @save-custom-groups="handleSaveCustomGroups"
+      @cancel-custom-group-edit="cancelCustomGroupEditMode" />
 
     <div class="cabinet-main">
       <CabinetTreePanel :tree-data="treeData" :selected-keys="selectedTreeKeys" @select="handleTreeSelect" />
 
-    <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
+      <CabinetFilePanel :can-manage="canManageRef" :breadcrumb-items="breadcrumbItems"
         :grouped-sections="groupedSections" :sorted-filtered-folder-items="sortedFilteredFolderItems"
         :table-columns="tableColumns" :selected-id-set="selectedIdSet" :clipboard-cut-id-set="clipboardCutIdSet"
         :selection-box="selectionBox" :context-menu="contextMenu" :context-menu-target-item="contextMenuTargetItem"
@@ -27,12 +35,11 @@
         :custom-group-mode="isCustomGroupMode" :custom-group-sections="customGroupSections"
         :custom-groups-empty="customGroupsEmpty" :is-editing-custom-groups="isEditingCustomGroups"
         :editing-custom-group-id="editingCustomGroupId" :editing-custom-group-name="editingCustomGroupName"
-        :custom-group-drag-over-id="customGroupDragOverId"
-        :property-modal-visible="propertyModalVisible" :property-item="propertyItem" :is-renaming="isRenaming"
-        :build-table-row-event="buildTableRowEvent" :build-table-row-class="buildTableRowClass"
-        :set-file-panel-ref="setFilePanelRef" :current-page="currentPage" :page-size="pageSize"
-        :total-items="totalItems" :set-grid-panel-ref="setGridPanelRef" @hide-context-menu="hideContextMenu"
-        @blank-contextmenu="handleBlankContextMenu" @enter-folder="enterFolderById"
+        :custom-group-drag-over-id="customGroupDragOverId" :property-modal-visible="propertyModalVisible"
+        :property-item="propertyItem" :is-renaming="isRenaming" :build-table-row-event="buildTableRowEvent"
+        :build-table-row-class="buildTableRowClass" :set-file-panel-ref="setFilePanelRef" :current-page="currentPage"
+        :page-size="pageSize" :total-items="totalItems" :set-grid-panel-ref="setGridPanelRef"
+        @hide-context-menu="hideContextMenu" @blank-contextmenu="handleBlankContextMenu" @enter-folder="enterFolderById"
         @grid-blank-mousedown="handleGridBlankMouseDown" @grid-order-change="handleGridOrderChange"
         @item-click="handleItemClick" @open="handleOpen" @item-contextmenu="handleItemContextMenu"
         @update:renamingValue="renamingValue = $event" @submit-rename="submitRename" @cancel-rename="cancelRename"
@@ -57,7 +64,8 @@
     <CabinetUploadProgressModal v-model:open="uploadProgressOpen" />
     <CabinetCreateItemModal @register="registerCreateItemModal" @success="handleCreateItemSuccess" />
     <CabinetCustomizeIconModal @register="registerCustomizeIconModal" @success="handleCustomizeIconSuccess" />
-    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" :can-manage="canManageRef" @saved="handlePreviewSaved" />
+    <CabinetPreviewModal v-model:open="previewModalVisible" :item="previewItem" :can-manage="canManageRef"
+      @saved="handlePreviewSaved" />
   </div>
 </template>
 
@@ -104,12 +112,17 @@ import CabinetUploadProgressModal from './CabinetUploadProgressModal.vue';
 
 // 文件柜主容器：负责状态管理、业务编排，以及把交互事件分发给各个子组件。
 interface Props {
+  /** 文件柜根节点显示名称，不传时根据 scope 自动取"私柜"/"公柜" */
   cabinetName?: string;
+  /** 是否有管理权限（新建/上传/重命名/删除/移动等写操作） */
   canManage?: boolean;
+  /** 文件柜范围：private=私柜，public=公柜 */
   scope?: CabinetScope;
 }
 
+/** 自定义分组偏好的 localStorage key 前缀（区分 scope 和用户） */
 const CUSTOM_GROUP_PREFERENCE_KEY_PREFIX = 'cabinet-custom-group-preference';
+/** 未分组区块的特殊 key，用于 customGroupOrders 中存储未分组条目的排序 */
 const UNGROUPED_CUSTOM_GROUP_KEY = '__ungrouped__';
 
 const props = withDefaults(defineProps<Props>(), {
@@ -119,54 +132,101 @@ const props = withDefaults(defineProps<Props>(), {
 });
 const userStore = useUserStore();
 
+/** 左侧目录树数据（bootstrap 接口返回，含根节点和所有文件夹） */
 const treeItemList = ref<CabinetItem[]>(adaptCabinetBootstrap({ scope: props.scope, canManage: props.canManage, items: [] }, props.cabinetName));
+/** 当前文件夹的分页条目（folder-view 接口返回，每次切换文件夹/翻页/排序时刷新） */
 const currentFolderPageItems = ref<CabinetItem[]>([]);
+/** 当前视图模式：grid=图标视图，table=列表视图 */
 const viewMode = ref<ViewMode>('grid');
+/** 网格图标尺寸：large=大图标，small=小图标 */
 const gridIconSize = ref<GridIconSize>('large');
+/** 搜索关键词，用于过滤当前目录的条目 */
 const searchKeyword = ref('');
+/** 当前排序字段 */
 const sortField = ref<SortField>('manual');
+/** 当前排序方向 */
 const sortOrder = ref<SortOrder>('asc');
+/** 当前分组字段 */
 const groupField = ref<GroupField>('none');
+/** 自定义分组列表（正式状态，保存后生效） */
 const customGroupList = ref<CustomGroupItem[]>([]);
+/** 自定义分组归属关系：fileId → groupId[] （正式状态） */
 const customGroupAssignments = ref<Record<string, string[]>>({});
+/** 自定义分组内条目排序：groupId → itemId[]（正式状态） */
 const customGroupOrders = ref<Record<string, string[]>>({});
+/** 编辑模式下的草稿分组列表（取消编辑时丢弃） */
 const draftCustomGroupList = ref<CustomGroupItem[]>([]);
+/** 编辑模式下的草稿归属关系 */
 const draftCustomGroupAssignments = ref<Record<string, string[]>>({});
+/** 编辑模式下的草稿排序 */
 const draftCustomGroupOrders = ref<Record<string, string[]>>({});
+/** 是否处于自定义分组编辑模式 */
 const isEditingCustomGroups = ref(false);
+/** 当前正在重命名的分组 id */
 const editingCustomGroupId = ref('');
+/** 当前正在重命名的分组名称（输入框绑定值） */
 const editingCustomGroupName = ref('');
+/** 自定义分组拖拽中的文件 id */
 const customGroupDragFileId = ref('');
+/** 自定义分组拖拽的来源分组 id */
 const customGroupDragSourceGroupId = ref('');
+/** 自定义分组拖拽悬停的目标分组 id（用于高亮显示） */
 const customGroupDragOverId = ref('');
+/** 当前所在文件夹 id，CABINET_ROOT_ID 表示根目录 */
 const currentFolderId = ref(CABINET_ROOT_ID);
+/** 当前分页页码 */
 const currentPage = ref(1);
+/** 每页条目数 */
 const pageSize = ref(40);
+/** 当前文件夹的总条目数（后端返回，用于分页） */
 const totalItems = ref(0);
+/** 左侧目录树选中的节点 key 列表（与 currentFolderId 同步） */
 const selectedTreeKeys = ref<string[]>([CABINET_ROOT_ID]);
+/** 文件面板 DOM 引用（用于滚动控制） */
 const filePanelRef = ref<HTMLElement | null>(null);
+/** 网格面板 DOM 引用（用于框选坐标计算） */
 const gridPanelRef = ref<HTMLElement | null>(null);
+/** 工具栏组件实例引用（用于调用 openUploadDialog 等方法） */
 const cabinetToolbarRef = ref<InstanceType<typeof CabinetToolbar> | null>(null);
+/** 上传进度弹窗是否显示 */
 const uploadProgressOpen = ref(false);
+/** 属性弹窗是否显示 */
 const propertyModalVisible = ref(false);
+/** 属性弹窗显示的条目 */
 const propertyItem = ref<CabinetItem | null>(null);
+/** 预览弹窗是否显示 */
 const previewModalVisible = ref(false);
+/** 预览弹窗显示的条目 */
 const previewItem = ref<CabinetItem | null>(null);
+/** 当前正在重命名的条目 id */
 const renamingItemId = ref('');
+/** 重命名输入框的当前值 */
 const renamingValue = ref('');
+/** 剪贴板状态（null 表示剪贴板为空） */
 const clipboardState = ref<ClipboardState | null>(null);
+/** 管理权限状态（从后端 canManage 字段同步，可能与 props.canManage 不同） */
 const canManageState = ref<boolean>(props.canManage);
+/** 当前 folder-view 请求的 AbortController（切换文件夹时取消上一次请求） */
 const folderViewAbortController = ref<AbortController | null>(null);
+/** folder-view 请求序号（防止旧请求覆盖新请求的结果） */
 const folderViewRequestSeq = ref(0);
+/**
+ * 合并 treeItemList 和 currentFolderPageItems 为完整条目列表
+ * 以 id 为 key 去重，currentFolderPageItems 中的条目优先（覆盖 tree 中的旧数据）
+ */
 const itemList = computed<CabinetItem[]>(() => {
   const itemMap = new Map<string, CabinetItem>();
   treeItemList.value.forEach((item) => itemMap.set(item.id, item));
   currentFolderPageItems.value.forEach((item) => itemMap.set(item.id, item));
   return Array.from(itemMap.values());
 });
+/** 管理权限的 computed ref（从 canManageState 派生，供 composable 使用） */
 const canManageRef = computed(() => canManageState.value);
+/** 是否可自定义图标（仅私柜且有管理权限时开放） */
 const canCustomizeIcons = computed(() => props.scope === 'private' && canManageRef.value);
+/** 右键菜单目标条目 id */
 const contextMenuTargetId = computed(() => contextMenu.value.targetId);
+/** 右键菜单目标条目对象 */
 const contextMenuTargetItem = computed(() => itemList.value.find((item) => item.id === contextMenu.value.targetId) || null);
 
 const contextMenu = ref({
@@ -193,17 +253,23 @@ const setGridPanelRef = (element: Element | null) => {
   gridPanelRef.value = element as HTMLElement | null;
 };
 
+/** 隐藏右键菜单并重置目标 id */
 const hideContextMenu = () => {
   contextMenu.value.visible = false;
   contextMenu.value.mode = 'item';
   contextMenu.value.targetId = '';
 };
 
+/** 取消重命名，清空 renamingItemId 和 renamingValue */
 const cancelRename = () => {
   renamingItemId.value = '';
   renamingValue.value = '';
 };
 
+/**
+ * 将前端 folderId 转换为 API 期望的 parentId
+ * 根节点 CABINET_ROOT_ID 转为 null，其他 id 原样返回
+ */
 const resolveApiParentId = (folderId: string) => (folderId === CABINET_ROOT_ID ? null : folderId);
 
 interface CabinetViewPreferenceState {
@@ -214,6 +280,7 @@ interface CabinetViewPreferenceState {
   groupField: GroupField;
 }
 
+/** 获取当前视图偏好快照（用于保存前备份，失败时回滚） */
 const getCurrentViewPreference = (): CabinetViewPreferenceState => ({
   viewMode: viewMode.value,
   gridIconSize: gridIconSize.value,
@@ -222,6 +289,7 @@ const getCurrentViewPreference = (): CabinetViewPreferenceState => ({
   groupField: groupField.value,
 });
 
+/** 将视图偏好应用到响应式状态（从后端加载或回滚时使用） */
 const applyViewPreference = (preference: CabinetViewPreferenceState) => {
   viewMode.value = preference.viewMode;
   gridIconSize.value = preference.gridIconSize;
@@ -249,8 +317,8 @@ const applyCustomGroupState = (payload?: {
 }) => {
   customGroupList.value = Array.isArray(payload?.groups)
     ? payload!.groups
-        .map((group) => ({ id: String(group.id || ''), name: String(group.name || '').trim() }))
-        .filter((group) => group.id && group.name)
+      .map((group) => ({ id: String(group.id || ''), name: String(group.name || '').trim() }))
+      .filter((group) => group.id && group.name)
     : [];
   customGroupAssignments.value = {};
   customGroupOrders.value = {};
@@ -1126,6 +1194,8 @@ const handleOpen = (item: CabinetItem) => {
   if (item.filePath && isCabinetImageExt(item.ext)) {
     previewModalVisible.value = false;
     previewItem.value = null;
+    console.log(getFileAccessHttpUrl(item.filePath), 'img');
+
     createImgPreview({
       imageList: [getFileAccessHttpUrl(item.filePath)],
       index: 0,

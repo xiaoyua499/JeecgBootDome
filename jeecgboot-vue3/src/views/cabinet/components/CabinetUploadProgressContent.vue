@@ -1,4 +1,17 @@
-<!-- 上传进度弹窗主体：展示上传任务列表、批量操作与筛选。 -->
+<!-- 上传进度弹窗主体：展示上传任务列表、批量操作与筛选。
+  功能说明：
+  - 从 useCabinetUploadTasks 获取全局单例任务列表
+  - 左侧导航栏（当前仅"上传"一项，预留扩展）
+  - 顶部批量操作：全部暂停 / 全部开始 / 全部删除
+  - 筛选栏：进行中（waiting/uploading/paused）/ 已完成（completed/error）
+  - 任务列表：每行显示文件名、进度条、操作按钮（暂停/恢复/删除）
+  - 支持复选框多选（全选/反选），为后续批量操作预留
+  - 进度条状态映射：
+    - uploading/waiting → active（蓝色动画）
+    - completed → success（绿色）
+    - error → exception（红色）
+    - paused → normal（灰色）
+-->
 <template>
   <div class="cabinet-upload-progress-content">
     <div class="progress-layout">
@@ -112,11 +125,21 @@ import { useCabinetUploadTasks } from '../composables/useCabinetUploadTasks';
 
 const { tasks, pauseAll, startAll, removeAll, pauseTask, resumeTask, removeTask } = useCabinetUploadTasks();
 
+/** 进行中筛选开关（waiting/uploading/paused 状态） */
 const filterInProgress = ref(true);
+/** 已完成筛选开关（completed/error 状态） */
 const filterCompleted = ref(false);
 
+/** 当前已勾选的任务 id Set（用于批量操作） */
 const selectedIds = ref<Set<string>>(new Set());
 
+/**
+ * 根据筛选条件过滤任务列表
+ * - 两个筛选都未勾选：显示全部
+ * - 两个都勾选：显示全部
+ * - 仅勾选"进行中"：只显示 waiting/uploading/paused
+ * - 仅勾选"已完成"：只显示 completed/error
+ */
 const filteredTasks = computed(() => {
   return tasks.value.filter((t) => {
     const inProg = t.status === 'waiting' || t.status === 'uploading' || t.status === 'paused';
@@ -138,11 +161,20 @@ const filteredTasks = computed(() => {
   });
 });
 
+/** 批量操作按钮禁用状态：任务列表为空时禁用 */
 const bulkDisabled = computed(() => tasks.value.length === 0);
 
+/** 全选复选框选中状态 */
 const selectAll = ref(false);
+/** 全选复选框半选状态（部分选中） */
 const selectIndeterminate = ref(false);
 
+/**
+ * 监听 filteredTasks 和 selectedIds 变化，同步更新全选/半选状态
+ * - 全部选中 → selectAll=true, selectIndeterminate=false
+ * - 部分选中 → selectAll=false, selectIndeterminate=true
+ * - 无选中 → selectAll=false, selectIndeterminate=false
+ */
 watch(
   [filteredTasks, selectedIds],
   () => {
@@ -159,6 +191,11 @@ watch(
   { deep: true },
 );
 
+/**
+ * 全选/取消全选
+ * checked=true 时将当前过滤列表中所有任务 id 加入 selectedIds
+ * checked=false 时从 selectedIds 中移除当前过滤列表的所有 id
+ */
 function onSelectAll(checked: boolean) {
   if (checked) {
     filteredTasks.value.forEach((t) => selectedIds.value.add(t.id));
@@ -168,6 +205,7 @@ function onSelectAll(checked: boolean) {
   selectedIds.value = new Set(selectedIds.value);
 }
 
+/** 切换单个任务的选中状态 */
 function toggleSelect(id: string, checked: boolean) {
   const next = new Set(selectedIds.value);
   if (checked) {

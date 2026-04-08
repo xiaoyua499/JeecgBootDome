@@ -1,4 +1,24 @@
-<!-- 单个文件项：负责图标模式下的文件展示、选中态和就地重命名输入。 -->
+<!-- 单个文件项（网格视图）
+  负责图标模式下单个文件/文件夹的展示、交互状态和就地重命名。
+
+  视觉状态：
+  - selected: 选中态（蓝色背景 + 边框）
+  - cutting: 剪切态（半透明，opacity 0.56）
+  - drop-target: 拖拽悬停目标态（蓝色边框 + 内阴影）
+  - file-item-large / file-item-small: 大/小图标尺寸
+
+  重命名交互：
+  - editing=true 时显示 a-input 输入框，自动聚焦并全选文本
+  - Enter / blur → submitRename
+  - Esc → cancelRename
+  - 输入框 click.stop 防止触发父级选中逻辑
+
+  事件：
+  - click/dblclick/contextmenu: 转发给父组件处理选中/打开/右键菜单
+  - dragenter/dragover/dragleave/drop: 转发给父组件处理拖拽移动
+  - update:editValue: 重命名输入框值变化
+  - submitRename/cancelRename: 重命名确认/取消
+-->
 <template>
   <div
     class="file-item"
@@ -36,13 +56,21 @@
 
   // 单个文件项：负责图标模式下的展示、选中态和就地重命名输入框。
   defineProps<{
+    /** 文件/文件夹名称，显示在图标下方 */
     name: string;
+    /** 图标图片路径（由 resolveCabinetItemIconSrc 解析） */
     iconSrc: string;
+    /** 图标尺寸：large（72px）或 small（32px） */
     size: 'large' | 'small';
+    /** 是否处于选中状态 */
     selected: boolean;
+    /** 是否处于剪切状态（半透明显示） */
     cutting?: boolean;
+    /** 是否为拖拽悬停的目标文件夹 */
     dropTarget?: boolean;
+    /** 是否处于重命名编辑状态 */
     editing?: boolean;
+    /** 重命名输入框的当前值（v-model:editValue） */
     editValue?: string;
   }>();
 
@@ -66,6 +94,7 @@
         return;
       }
       // 进入重命名时自动聚焦并选中文本，贴近系统文件管理器交互。
+      // nextTick 确保 DOM 已渲染完成再操作 input 元素
       await nextTick();
       const inputEl = value?.input as HTMLInputElement | undefined;
       inputEl?.focus();
