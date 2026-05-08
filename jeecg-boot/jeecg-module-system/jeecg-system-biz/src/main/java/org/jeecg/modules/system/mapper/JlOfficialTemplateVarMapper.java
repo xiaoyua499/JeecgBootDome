@@ -1,11 +1,11 @@
-package org.jeecg.modules.demo.official.mapper;
+package org.jeecg.modules.system.mapper;
 
 import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplateVar;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.jeecg.modules.system.entity.JlOfficialTemplateVar;
 
 /**
  * @Description: 公文模板变量

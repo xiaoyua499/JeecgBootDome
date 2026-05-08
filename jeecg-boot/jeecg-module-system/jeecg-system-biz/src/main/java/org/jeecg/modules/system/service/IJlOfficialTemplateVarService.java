@@ -1,7 +1,7 @@
-package org.jeecg.modules.demo.official.service;
+package org.jeecg.modules.system.service;
 
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplateVar;
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.jeecg.modules.system.entity.JlOfficialTemplateVar;
 
 import java.util.List;
 

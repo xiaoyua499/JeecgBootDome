@@ -1,9 +1,9 @@
-package org.jeecg.modules.demo.official.service.impl;
+package org.jeecg.modules.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplateVar;
-import org.jeecg.modules.demo.official.mapper.JlOfficialTemplateVarMapper;
-import org.jeecg.modules.demo.official.service.IJlOfficialTemplateVarService;
+import org.jeecg.modules.system.entity.JlOfficialTemplateVar;
+import org.jeecg.modules.system.mapper.JlOfficialTemplateVarMapper;
+import org.jeecg.modules.system.service.IJlOfficialTemplateVarService;
 import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

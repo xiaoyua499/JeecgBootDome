@@ -1,13 +1,13 @@
-package org.jeecg.modules.demo.official.service.impl;
+package org.jeecg.modules.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplate;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplateVar;
-import org.jeecg.modules.demo.official.mapper.JlOfficialTemplateMapper;
-import org.jeecg.modules.demo.official.mapper.JlOfficialTemplateVarMapper;
-import org.jeecg.modules.demo.official.service.IJlOfficialTemplateService;
+import org.jeecg.modules.system.entity.JlOfficialTemplate;
+import org.jeecg.modules.system.entity.JlOfficialTemplateVar;
+import org.jeecg.modules.system.mapper.JlOfficialTemplateMapper;
+import org.jeecg.modules.system.mapper.JlOfficialTemplateVarMapper;
+import org.jeecg.modules.system.service.IJlOfficialTemplateService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

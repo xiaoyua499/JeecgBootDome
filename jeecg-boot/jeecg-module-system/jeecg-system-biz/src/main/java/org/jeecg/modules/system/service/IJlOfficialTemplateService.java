@@ -1,9 +1,9 @@
-package org.jeecg.modules.demo.official.service;
+package org.jeecg.modules.system.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplate;
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.jeecg.modules.system.entity.JlOfficialTemplate;
 
 /**
  * @Description: 公文模板主表

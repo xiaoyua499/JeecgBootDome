@@ -14,16 +14,16 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.query.QueryRuleEnum;
 import org.jeecg.common.util.oConvertUtils;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplate;
-import org.jeecg.modules.demo.official.entity.JlOfficialTemplateVar;
-import org.jeecg.modules.demo.official.service.IJlOfficialTemplateService;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 
-import org.jeecg.modules.demo.official.service.IJlOfficialTemplateVarService;
+import org.jeecg.modules.system.entity.JlOfficialTemplate;
+import org.jeecg.modules.system.entity.JlOfficialTemplateVar;
+import org.jeecg.modules.system.service.IJlOfficialTemplateService;
+import org.jeecg.modules.system.service.IJlOfficialTemplateVarService;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
